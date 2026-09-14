@@ -468,6 +468,9 @@ npm start            # run the app
 npm test             # 405 main-process checks: limits, caps, rollover, lookup, sales
 npm run test:ui      # 131 checks driving the real window, incl. a real PDF render
 npm run dist:win     # build the Windows x64 installer + portable exe
+                     # (--publish never: releases are published by CI, not by
+                     #  electron-builder, which otherwise tries to publish by
+                     #  itself whenever HEAD happens to be on a tag)
 npm run fix:native   # repair node_modules after a Windows build (see below)
 npm run shot         # seed demo trade and screenshot the UI + report into .shots/
 node scripts/make-icon.js   # regenerate build/icon.ico and build/icon.png

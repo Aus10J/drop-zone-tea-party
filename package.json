@@ -15,8 +15,8 @@
     "test:ui": "electron test/ui-smoke.js",
     "fix:native": "electron-builder install-app-deps",
     "postinstall": "electron-builder install-app-deps",
-    "dist:win": "electron-builder --win --x64",
-    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win --x64 --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
     "shot": "electron scripts/screenshot.js",
     "pretest:ui": "node scripts/preflight.js"
   },
