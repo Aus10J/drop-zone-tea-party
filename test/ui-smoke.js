@@ -123,14 +123,19 @@ app.whenReady().then(async () => {
     eq('drink count starts at zero', await js(win, 'window.__scan.data.status.today.servings'), 0);
     eq('night limit surfaced on the scan', await js(win, 'window.__scan.data.status.limits.total'), 4);
 
-    console.log('\nTyping a DoD ID for someone new');
+    console.log('\nTyping a customer ID for someone new');
     await js(win, 'document.querySelector("#manualScan").value = "7654321098"; document.querySelector("#manualScanBtn").click()');
     check('an unknown ID offers to add them',
       await waitFor(win, '!document.querySelector("#modalRoot").classList.contains("hidden")', 'add prompt'));
     check('the add dialog takes first and last name separately',
       await js(win, 'document.querySelectorAll("#modalBody input").length') === 3);
-    check('the typed ID is carried into the DoD ID field',
+    check('the typed ID lands in Customer ID, not the name',
       await js(win, 'document.querySelectorAll("#modalBody input")[2].value') === '7654321098');
+    check('and the name fields are left empty',
+      await js(win, 'document.querySelectorAll("#modalBody input")[0].value') === ''
+      && await js(win, 'document.querySelectorAll("#modalBody input")[1].value') === '');
+    check('with the cursor waiting in Last name',
+      await js(win, 'document.activeElement === document.querySelectorAll("#modalBody input")[1]'));
     await js(win, `Array.from(document.querySelectorAll('#modalActions .btn'))
       .find(b => b.textContent === 'Add Patron').click()`);
     check('adding with no name at all works',
@@ -142,6 +147,39 @@ app.whenReady().then(async () => {
       const r = await window.api.patron.list({ search: '7654321098' });
       return r.data.length === 1 && r.data[0].dod_id === '7654321098';
     })()`));
+
+    // An ID with letters in it must route to Customer ID just the same.
+    await js(win, 'document.querySelector("#clearPatron").click()');
+    await sleep(250);
+    await js(win, 'document.querySelector("#manualScan").value = "aj700905061988"; document.querySelector("#manualScanBtn").click()');
+    await waitFor(win, '!document.querySelector("#modalRoot").classList.contains("hidden")', 'alnum prompt');
+    check('an alphanumeric ID goes to Customer ID',
+      await js(win, 'document.querySelectorAll("#modalBody input")[2].value') === 'aj700905061988');
+    check('and not into Last name',
+      await js(win, 'document.querySelectorAll("#modalBody input")[1].value') === '');
+    await js(win, `(() => {
+      document.querySelectorAll('#modalBody input')[1].value = 'Jennings';
+      Array.from(document.querySelectorAll('#modalActions .btn'))
+        .find(b => b.textContent === 'Add Patron').click();
+    })()`);
+    check('it is saved verbatim, letters included', await waitFor(win, `(async () => {
+      const r = await window.api.patron.find({ term: 'aj7009' });
+      return r.data.length === 1 && r.data[0].dod_id === 'aj700905061988'
+        && r.data[0].last_name === 'Jennings';
+    })()`, 'alnum saved'));
+
+    // A pure surname still goes to the name field.
+    await js(win, 'document.querySelector("#clearPatron").click()');
+    await sleep(250);
+    await js(win, 'document.querySelector("#manualScan").value = "Kowalski"; document.querySelector("#manualScanBtn").click()');
+    await waitFor(win, '!document.querySelector("#modalRoot").classList.contains("hidden")', 'name prompt');
+    check('a plain surname still lands in Last name',
+      await js(win, 'document.querySelectorAll("#modalBody input")[1].value') === 'Kowalski');
+    check('leaving Customer ID empty',
+      await js(win, 'document.querySelectorAll("#modalBody input")[2].value') === '');
+    await js(win, `Array.from(document.querySelectorAll('#modalActions .btn'))
+      .find(b => b.textContent === 'Cancel').click()`);
+    await sleep(250);
 
     // A scanned card payload is unambiguous, so it still needs no confirmation.
     await js(win, 'document.querySelector("#manualScan").value = "QQZZ4417738299100237764411AABB"; document.querySelector("#manualScanBtn").click()');

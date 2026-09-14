@@ -674,10 +674,11 @@ function main() {
     try { db.updatePatron(sid, { dod_id: '5551239876' }); return false; }
     catch (err) { return /already on/i.test(err.message); }
   })());
-  check('non-digits are stripped from a typed ID', (() => {
+  check('a typed ID is kept exactly as entered, punctuation and all', (() => {
     db.updatePatron(nid, { dod_id: '555-123-9876' });
-    return db.patronStatus(nid).patron.dod_id === '5551239876';
+    return db.patronStatus(nid).patron.dod_id === '555-123-9876';
   })());
+  db.updatePatron(nid, { dod_id: '5551239876' });
   db.updatePatron(nid, { dod_id: '' });
   eq('clearing it is allowed', db.patronStatus(nid).patron.dod_id, null);
   db.updatePatron(nid, { dod_id: '5551239876' });
@@ -848,8 +849,8 @@ function main() {
   eq('label prefers the name', db.labelFor(both.patron), 'D. Whitfield');
   check('findable by either', ids(db.findPatrons('Whitf')).includes(both.patron.id)
     && ids(db.findPatrons('444999')).includes(both.patron.id));
-  check('dashes and spaces in a typed ID are stripped',
-    db.createPatron({ name: 'Punctuated', dodId: '111-222 3333' }).patron.dod_id === '1112223333');
+  check('dashes and spaces in a typed ID are preserved, not rewritten',
+    db.createPatron({ name: 'Punctuated', dodId: '111-222 3333' }).patron.dod_id === '111-222 3333');
 
   check('an empty submission is refused', (() => {
     try { db.createPatron({}); return false; }
@@ -858,6 +859,42 @@ function main() {
   check('whitespace only is refused', (() => {
     try { db.createPatron({ name: '   ', dodId: '  ' }); return false; }
     catch (err) { return /name or a customer ID/i.test(err.message); }
+  })());
+
+  /* ---------------------------------------------------------------- */
+  section('Customer IDs are free-form');
+  // Real-world IDs here mix letters and digits. Anything that strips
+  // non-digits silently turns one ID into a different one.
+  const mixedId = 'aj700905061988';
+  const mixed = db.createPatron({ dodId: mixedId });
+  eq('an alphanumeric ID is stored exactly as typed', mixed.patron.dod_id, mixedId);
+  eq('and is not mangled into digits', mixed.patron.dod_id.includes('aj'), true);
+  eq('last four come off the end of it', mixed.patron.last4, '1988');
+  eq('the label uses it', db.labelFor(mixed.patron), `ID ${mixedId}`);
+
+  check('findable by the whole thing', ids(db.findPatrons(mixedId)).includes(mixed.patron.id));
+  check('by its letters', ids(db.findPatrons('aj7009')).includes(mixed.patron.id));
+  check('by its digits', ids(db.findPatrons('0905061')).includes(mixed.patron.id));
+  check('and by the last four', ids(db.findPatrons('1988')).includes(mixed.patron.id));
+  eq('adding the same ID again returns the same record',
+    db.createPatron({ dodId: mixedId }).patron.id, mixed.patron.id);
+
+  // Editing one must round-trip intact too.
+  const mixedEdit = db.createPatron({ lastName: 'Editable' });
+  db.updatePatron(mixedEdit.patron.id, { dod_id: 'zz-88/OTHER_01' });
+  eq('an ID with punctuation survives an edit',
+    db.patronStatus(mixedEdit.patron.id).patron.dod_id, 'zz-88/OTHER_01');
+  check('and still finds them',
+    ids(db.findPatrons('OTHER_01')).includes(mixedEdit.patron.id));
+  eq('surrounding whitespace is trimmed', (() => {
+    db.updatePatron(mixedEdit.patron.id, { dod_id: '  padded99  ' });
+    return db.patronStatus(mixedEdit.patron.id).patron.dod_id;
+  })(), 'padded99');
+
+  check('a duplicate alphanumeric ID is still refused', (() => {
+    const other = db.createPatron({ lastName: 'Clash' });
+    try { db.updatePatron(other.patron.id, { dod_id: mixedId }); return false; }
+    catch (err) { return /already on/i.test(err.message); }
   })());
 
   /* ---------------------------------------------------------------- */

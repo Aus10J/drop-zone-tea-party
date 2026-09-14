@@ -584,8 +584,9 @@ async function submitManualScan() {
   }
 
   // A long payload is a card that was scanned into the box — create straight
-  // away, as a physical card is unambiguous.
-  if (raw.length >= 15) {
+  // away, as a physical card is unambiguous. The threshold sits well above any
+  // plausible customer ID so a typed one is never swallowed as a scan.
+  if (raw.length >= 30) {
     input.value = '';
     await handleScan(raw);
     return;
@@ -601,19 +602,23 @@ async function submitManualScan() {
  * both — and nothing is required beyond one of the two.
  */
 function promptAddPatron(term) {
-  const looksNumeric = /^\d+$/.test(term);
-  // Anything long is a scanned card rather than something typed. Keep it and
-  // key the new patron to it, so scanning again finds this record.
-  const scanned = term.length >= 15 ? term : null;
+  // A full card payload is long; a customer ID is not. Anything shorter than
+  // this is treated as typed input, so an ID like "aj700905061988" is never
+  // mistaken for a scan.
+  const scanned = term.length >= 30 ? term : null;
+
+  // Anything containing a digit is an ID, not a surname. Names are letters
+  // (and apostrophes and hyphens); IDs almost always carry a number.
+  const looksLikeId = !scanned && /\d/.test(term);
 
   const firstInput = el('input', { class: 'input', type: 'text', placeholder: 'optional' });
   const lastInput = el('input', {
     class: 'input', type: 'text', placeholder: 'e.g. Ferreira',
-    value: (looksNumeric || scanned) ? '' : term,
+    value: (looksLikeId || scanned) ? '' : term,
   });
   const idInput = el('input', {
-    class: 'input mono', type: 'text', inputmode: 'numeric', maxlength: '10',
-    placeholder: 'optional', value: looksNumeric ? term : '',
+    class: 'input mono', type: 'text', autocomplete: 'off', spellcheck: 'false',
+    placeholder: 'optional', value: looksLikeId ? term : '',
   });
 
   const submit = async (close) => {
@@ -660,7 +665,7 @@ function promptAddPatron(term) {
       { label: 'Add Patron', cls: 'primary', onClick: submit },
     ],
     onOpen: () => {
-      (looksNumeric ? lastInput : firstInput).focus();
+      lastInput.focus();
       for (const inp of [firstInput, lastInput, idInput]) {
         inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(closeModal); });
       }
@@ -838,8 +843,8 @@ function editPatronDetails(patron, onSaved) {
   const lastName = el('input', { class: 'input', type: 'text', value: p.last_name || '' });
   const dob = el('input', { class: 'input', type: 'date', value: p.dob || '' });
   const dodId = el('input', {
-    class: 'input mono', type: 'text', inputmode: 'numeric', maxlength: '10',
-    value: p.dod_id || '', placeholder: '10-digit customer ID',
+    class: 'input mono', type: 'text', autocomplete: 'off', spellcheck: 'false',
+    value: p.dod_id || '', placeholder: 'letters and digits both fine',
   });
   const cardInput = el('input', {
     class: 'input mono', type: 'text', autocomplete: 'off', spellcheck: 'false',

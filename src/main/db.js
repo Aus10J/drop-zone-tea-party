@@ -712,8 +712,10 @@ function resolveCard(parsed) {
 function createPatron({ name, firstName, lastName, dodId, cardParsed } = {}) {
   const card = cardParsed && cardParsed.raw ? cardParsed : null;
 
-  // A scanned card can supply the ID and the name by itself.
-  let digits = String(dodId || '').replace(/\D/g, '');
+  // Customer IDs are free-form: they may be digits, letters, or both. Only
+  // whitespace is trimmed — stripping anything else would silently corrupt an
+  // ID like "aj700905061988" into a different one.
+  let digits = String(dodId || '').trim();
   if (!digits && card && card.edipi) digits = card.edipi;
 
   let first = String(firstName || '').trim() || null;
@@ -867,7 +869,7 @@ function updatePatron(id, fields) {
   // that patron findable by ID. It also stores the ID hash, so a later scan of
   // a reissued card re-links to them instead of creating a second record.
   if (has('dod_id')) {
-    const digits = String(fields.dod_id || '').replace(/\D/g, '');
+    const digits = String(fields.dod_id || '').trim();
     if (digits) {
       const clash = db.prepare(
         'SELECT id FROM patrons WHERE dod_id = ? AND id != ?').get(digits, id);

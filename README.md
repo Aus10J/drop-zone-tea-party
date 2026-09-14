@@ -41,11 +41,16 @@ fine; nothing has to be numeric.
 
 - **One match** → loads them.
 - **Several** → a picker showing name, ID, drinks tonight and last visit.
-- **None** → offers to add them, with **First name / Last name / customer ID**
-  fields and whatever you typed already filled in (a word lands in Last name,
-  digits in customer ID). A last name on its own is enough; **the customer ID is
-  optional**. Because it asks rather than creating silently, a typo is caught
-  before it becomes a duplicate.
+- **None** → offers to add them, with **First name / Last name / Customer ID**
+  fields and whatever you typed already filled in. Anything containing a digit
+  goes to **Customer ID**; letters-only goes to **Last name**. The cursor waits
+  in Last name, since the ID is already filled. A last name on its own is
+  enough and **the customer ID is optional**. Because it asks rather than
+  creating silently, a typo is caught before it becomes a duplicate.
+
+**Customer IDs are free-form.** Letters, digits, dashes, any mix — they are
+stored exactly as entered and never rewritten. `aj700905061988` stays
+`aj700905061988`. Search matches any part of one.
 
 A card scanned into that box is unambiguous, so it is created without asking.
 
@@ -524,8 +529,8 @@ the warning entirely means buying a code-signing certificate.
 ```bash
 npm install          # rebuilds the native SQLite module for Electron
 npm start            # run the app
-npm test             # 457 main-process checks: limits, caps, rollover, lookup, sales
-npm run test:ui      # 152 checks driving the real window, incl. a real PDF render
+npm test             # 470 main-process checks: limits, caps, rollover, lookup, sales
+npm run test:ui      # 159 checks driving the real window, incl. a real PDF render
 npm run dist:win     # build the Windows x64 installer + portable exe
                      # (--publish never: releases are published by CI, not by
                      #  electron-builder, which otherwise tries to publish by
