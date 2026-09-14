@@ -273,6 +273,50 @@ app.whenReady().then(async () => {
     check('ticket clears after the sale',
       await js(win, 'document.querySelectorAll(".tline").length === 0'));
 
+    console.log('\nUndo last sale');
+    check('the undo button is enabled once there is a sale', await waitFor(win,
+      'document.querySelector("#undoLast").disabled === false', 'undo enabled'));
+    check('and names what it would reverse', await js(win,
+      'document.querySelector("#undoLast").title').then((t) => /\$/.test(t)));
+
+    await js(win, 'document.querySelector("#undoLast").click()');
+    check('undo asks for a reason and a PIN', await waitFor(win,
+      'document.querySelectorAll("#modalBody input").length === 2', 'undo confirm'));
+    await js(win, `(() => {
+      const i = document.querySelectorAll('#modalBody input');
+      i[0].value = 'wrong button';
+      i[1].value = '1234';
+      Array.from(document.querySelectorAll('#modalActions .btn'))
+        .find(b => b.textContent === 'Undo Sale').click();
+    })()`);
+    check('the sale is reversed', await waitFor(win, `(async () => {
+      const r = await window.api.patron.find({ term: '7654321098' });
+      return r.data.length === 1 && r.data[0].drinks_today === 0;
+    })()`, 'undone'));
+    check('the order shows as voided in Recent', await waitFor(win,
+      'document.querySelectorAll("#recentList .rline.voided").length >= 1', 'voided row'));
+    check('and undo disables itself with nothing left to reverse',
+      await js(win, 'document.querySelector("#undoLast").disabled === true'));
+
+    // Ring it back up so the rest of the suite has a sale to work with.
+    await js(win, `(() => {
+      const s = document.querySelector('#manualScan');
+      s.value = '7654321098';
+      document.querySelector('#manualScanBtn').click();
+    })()`);
+    await waitFor(win, '!document.querySelector("#patronCard").classList.contains("hidden")', 'reloaded');
+    await js(win, 'Array.from(document.querySelectorAll(".cattab")).find(t => t.textContent === "Beer").click()');
+    await sleep(200);
+    await js(win, 'document.querySelectorAll(".prod")[0].click()');
+    await sleep(200);
+    await js(win, 'document.querySelectorAll(".prod")[0].click()');
+    await waitFor(win, 'document.querySelector(".qty-val").textContent === "2"', 'rebuilt ticket');
+    await js(win, 'document.querySelector("#completeSale").click()');
+    check('re-rung for the remaining tests', await waitFor(win, `(async () => {
+      const r = await window.api.patron.find({ term: '7654321098' });
+      return r.data.length === 1 && r.data[0].drinks_today === 2;
+    })()`, 're-rung'));
+
     console.log('\nScreen resets for the next customer');
     check('the patron panel clears', await waitFor(win,
       'document.querySelector("#patronCard").classList.contains("hidden")', 'panel cleared'));
@@ -486,6 +530,23 @@ app.whenReady().then(async () => {
     `);
     await sleep(400);
     check('price summary rendered', await js(win, 'document.querySelectorAll("#priceSummary .stat").length >= 3'));
+
+    console.log('\nBackups');
+    check('the panel warns when no folder is set', await waitFor(win,
+      'document.querySelector("#backupStatus").textContent.includes("No backup folder chosen")',
+      'backup warning'));
+    check('automatic backups default to on',
+      await js(win, 'document.querySelector("#backupEnabled").checked === true'));
+    check('with a retention count', await js(win,
+      'parseInt(document.querySelector("#backupKeep").value, 10) > 0'));
+    check('backing up with no folder says why, and does not throw', await js(win, `(async () => {
+      const r = await window.api.backup.now();
+      return r.ok && r.data.skipped === 'no-folder';
+    })()`));
+    check('status reports unconfigured over IPC', await js(win, `(async () => {
+      const r = await window.api.backup.status();
+      return r.ok && r.data.configured === false && r.data.enabled === true;
+    })()`));
 
     console.log('\nEditing a price');
     await js(win, 'document.querySelector(".navbtn[data-view=\\"inventory\\"]").click()');

@@ -395,6 +395,13 @@ async function onShiftButton() {
   state.shift = null;
   renderChrome();
   showShiftSummary(summary);
+
+  // Say plainly whether the night made it off the machine.
+  const b = summary.backup;
+  if (b && b.filePath) toast(`Night backed up to ${b.filePath}`, 'ok', 5000);
+  else if (b && b.skipped && b.skipped !== 'already-today') {
+    toast(`Not backed up — ${backupSkipReason(b.skipped, b.error)}`, 'warn', 7000);
+  }
 }
 
 function showShiftSummary(s) {
@@ -542,6 +549,7 @@ function wireBar() {
 
   $('#clearTicket').addEventListener('click', clearTicket);
   $('#completeSale').addEventListener('click', completeSale);
+  $('#undoLast').addEventListener('click', undoLastSale);
 }
 
 /**
@@ -1326,10 +1334,64 @@ async function completeSale() {
   }
 }
 
+/** The most recent sale that has not already been voided. */
+function lastLiveOrder() {
+  return (state.recent || []).find((o) => !o.voided) || null;
+}
+
+/**
+ * One-tap reversal of the sale just rung up — the "wrong button" case, which
+ * is common and time-critical. Same PIN rule as any other void, with the
+ * reason pre-filled so it is a single confirmation rather than a form.
+ */
+async function undoLastSale() {
+  const order = lastLiveOrder();
+  if (!order) { toast('Nothing to undo.', 'warn'); return; }
+
+  const got = await askManager({
+    title: 'Undo the last sale?',
+    message: `${fmtTime(order.created_at)} · ${order.patron_label} · `
+      + `${order.items.map((i) => `${i.qty}× ${i.product_name}`).join(', ')} · `
+      + `${money(order.subtotal_cents)}. Everything on it goes back on the shelf `
+      + 'and off their count.',
+    needReason: true,
+    reasonLabel: 'Reason',
+    needPin: state.settings.require_pin_for_void === '1',
+    confirmLabel: 'Undo Sale',
+    confirmCls: 'danger',
+  });
+  if (!got) return;
+
+  const res = await tryReq(window.api.order.void, {
+    orderId: order.id, reason: got.reason || 'undo — rung in error', pin: got.pin,
+    actor: state.settings.bartender_name || null,
+  });
+  if (!res) return;
+
+  state.products = res.products;
+  if (res.patron && state.patron && res.patron.patron.id === state.patron.patron.id) {
+    state.patron = res.patron;
+    renderPatronPanel();
+  }
+  renderProducts();
+  await refreshRecent();
+  state.lowStock = await tryReq(window.api.inventory.lowStock) || state.lowStock;
+  renderChrome();
+  await repriceTicket();
+  toast(`Undone — ${money(order.subtotal_cents)} reversed.`, 'ok', 3200);
+}
+
 async function refreshRecent() {
   const rows = await tryReq(window.api.order.recent, { limit: 25 });
   if (!rows) return;
   state.recent = rows;
+
+  const undo = $('#undoLast');
+  const last = lastLiveOrder();
+  undo.disabled = !last;
+  undo.title = last
+    ? `${fmtTime(last.created_at)} · ${last.patron_label} · ${money(last.subtotal_cents)}`
+    : 'No sale to undo';
 
   const wrap = $('#recentList');
   wrap.replaceChildren();
@@ -2247,6 +2309,38 @@ function wireAdmin() {
 
   $('#revealData2').addEventListener('click', () => window.api.exporter.revealData());
 
+  // --- backups ---
+  $('#backupChoose').addEventListener('click', async () => {
+    const res = await tryReq(window.api.backup.chooseDir);
+    if (!res || res.canceled) return;
+    await renderBackups();
+    toast(res.first && res.first.filePath
+      ? 'Folder set and a first copy taken.'
+      : 'Folder set.', 'ok');
+  });
+  $('#backupNow').addEventListener('click', async () => {
+    const res = await tryReq(window.api.backup.now);
+    if (!res) return;
+    await renderBackups();
+    if (res.filePath) toast(`Backed up (${(res.bytes / 1048576).toFixed(1)} MB).`, 'ok');
+    else toast(backupSkipReason(res.skipped, res.error), 'warn', 5000);
+  });
+  $('#backupOpen').addEventListener('click', () => window.api.backup.openDir());
+  $('#backupEnabled').addEventListener('change', async () => {
+    await tryReq(window.api.settings.save, {
+      patch: { backup_enabled: $('#backupEnabled').checked ? '1' : '0' },
+    });
+    state.settings = await tryReq(window.api.settings.all) || state.settings;
+    await renderBackups();
+  });
+  $('#backupKeep').addEventListener('change', async () => {
+    await tryReq(window.api.settings.save, {
+      patch: { backup_keep: String(Math.max(1, num($('#backupKeep').value, 30))) },
+    });
+    state.settings = await tryReq(window.api.settings.all) || state.settings;
+    await renderBackups();
+  });
+
   wireCalibration();
 }
 
@@ -2281,7 +2375,54 @@ function renderAdmin() {
   $('#setRetention').value = s.pii_retention_days || '0';
   $('#dbPathHint').textContent = `Database: ${state.dbPath}`;
   renderPriceSummary();
+  renderBackups();
   loadCalibration();
+}
+
+function backupSkipReason(skipped, error) {
+  if (skipped === 'no-folder') return 'No backup folder chosen yet.';
+  if (skipped === 'unreachable') return 'The backup folder is not reachable — is the drive plugged in?';
+  if (skipped === 'disabled') return 'Automatic backups are switched off.';
+  if (skipped === 'error') return `Backup failed: ${error}`;
+  return 'Backup did not run.';
+}
+
+async function renderBackups() {
+  const s = await tryReq(window.api.backup.status);
+  const box = $('#backupStatus');
+  if (!s) { box.textContent = 'Could not read backup status.'; return; }
+
+  $('#backupEnabled').checked = s.enabled;
+  $('#backupKeep').value = String(s.keep);
+
+  if (!s.configured) {
+    box.className = 'notice warn';
+    box.textContent = 'No backup folder chosen — nothing is being backed up. '
+      + 'Choose a folder on a USB stick or a shared drive to start.';
+  } else if (!s.reachable) {
+    box.className = 'notice warn';
+    box.textContent = `Backup folder is not reachable: ${s.dir}\n`
+      + 'If that is a removable drive, plug it in. Backups are being skipped until then.';
+  } else if (!s.enabled) {
+    box.className = 'notice warn';
+    box.textContent = `Automatic backups are switched off. Folder: ${s.dir}`;
+  } else {
+    box.className = 'notice ok';
+    box.textContent = `Backing up to ${s.dir}\n`
+      + `${s.count} cop${s.count === 1 ? 'y' : 'ies'} kept`
+      + (s.lastAt ? ` · last ${fmtDateTime(s.lastAt)}` : ' · none taken yet')
+      + (s.due ? ' · one is due' : '');
+  }
+
+  const list = $('#backupList');
+  list.replaceChildren();
+  for (const b of s.recent || []) {
+    list.appendChild(el('div', { class: 'backup-row' }, [
+      el('span', { class: 'mono', text: b.name }),
+      el('span', { text: `${(b.bytes / 1048576).toFixed(1)} MB` }),
+      el('span', { class: 'backup-when', text: fmtDateTime(b.at) }),
+    ]));
+  }
 }
 
 /**

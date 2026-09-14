@@ -145,6 +145,7 @@ function checkRollover() {
   db.audit('business_day_rollover', `${previous} -> ${now}`, 'system');
   db.rollShiftIfStale();
   db.purgeOldPii();
+  exports_.runBackupIfDue('business day rollover');
 
   if (win && !win.isDestroyed()) {
     win.webContents.send('business-date', { businessDate: now, previous });
@@ -295,7 +296,32 @@ function registerIpc() {
     if (db.getSetting('require_pin_for_void') === '1' && !db.verifyPin(pin)) {
       throw new Error('Manager PIN incorrect.');
     }
-    return db.closeShift(closedBy, note);
+    const summary = db.closeShift(closedBy, note);
+    // The end of a shift is the natural moment to get the night off the box.
+    return { ...summary, backup: exports_.runBackup({ reason: 'shift close' }) };
+  });
+
+  /* --- backups ---------------------------------------------------- */
+  handle('backup:status', () => exports_.backupStatus());
+  handle('backup:now', () => exports_.runBackup({ reason: 'manual', force: true }));
+  handle('backup:list', () => exports_.listBackups());
+  handle('backup:chooseDir', async () => {
+    const res = await dialog.showOpenDialog(win, {
+      title: 'Choose a folder for automatic backups',
+      properties: ['openDirectory', 'createDirectory'],
+      buttonLabel: 'Back Up Here',
+    });
+    if (res.canceled || !res.filePaths.length) return { canceled: true };
+    db.setSetting('backup_dir', res.filePaths[0]);
+    db.audit('backup_folder_set', res.filePaths[0], 'manager');
+    // Prove it works immediately rather than at 2am when nobody is watching.
+    const first = exports_.runBackup({ reason: 'folder chosen', force: true });
+    return { dir: res.filePaths[0], first, status: exports_.backupStatus() };
+  });
+  handle('backup:openDir', () => {
+    const { dir, reachable } = exports_.backupStatus();
+    if (dir && reachable) shell.openPath(dir);
+    return { ok: !!(dir && reachable) };
   });
 
   /* --- reports ---------------------------------------------------- */
@@ -435,6 +461,14 @@ app.whenReady().then(() => {
   // An app closed before the rollover and reopened after it still has to tidy
   // up the shift it left open.
   db.rollShiftIfStale();
+
+  // Catch up on a missed day — the bar may have been shut, or the machine off.
+  try {
+    const caught = exports_.runBackupIfDue('daily, on launch');
+    if (caught && caught.filePath) console.log(`[backup] ${caught.filePath}`);
+  } catch (err) {
+    console.error('[backup] startup backup failed', err);
+  }
 
   registerIpc();
   buildMenu();

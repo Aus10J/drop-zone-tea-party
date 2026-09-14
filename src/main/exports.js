@@ -418,7 +418,118 @@ function buildReportHtml(rep, venueName) {
 </body></html>`;
 }
 
+/* ------------------------------------------------------------------ *
+ * Automatic backups
+ *
+ * Everything lives in one SQLite file on one machine, so that machine is a
+ * single point of failure for the whole season's records. These copies go
+ * somewhere else — a USB stick or a shared drive — on their own, because a
+ * backup that depends on somebody remembering is not a backup.
+ * ------------------------------------------------------------------ */
+
+const BACKUP_PREFIX = 'bar-backup-';
+
+function backupFolder() {
+  const dir = db.getSetting('backup_dir');
+  if (!dir) return { configured: false, dir: null, reachable: false };
+  let reachable = false;
+  try {
+    reachable = fs.existsSync(dir) && fs.statSync(dir).isDirectory();
+  } catch { reachable = false; }
+  return { configured: true, dir, reachable };
+}
+
+function listBackups() {
+  const { dir, reachable } = backupFolder();
+  if (!reachable) return [];
+  try {
+    return fs.readdirSync(dir)
+      .filter((f) => f.startsWith(BACKUP_PREFIX) && f.endsWith('.db'))
+      .map((f) => {
+        const full = path.join(dir, f);
+        const st = fs.statSync(full);
+        return { name: f, path: full, bytes: st.size, at: st.mtime.toISOString() };
+      })
+      .sort((a, b) => b.at.localeCompare(a.at));
+  } catch {
+    return [];
+  }
+}
+
+/** Keep the newest `keep` copies; delete the rest so a stick cannot fill up. */
+function pruneBackups(keep) {
+  const limit = Math.max(1, Number(keep) || 30);
+  const excess = listBackups().slice(limit);
+  let removed = 0;
+  for (const f of excess) {
+    try { fs.rmSync(f.path); removed++; } catch { /* leave it rather than fail the backup */ }
+  }
+  return removed;
+}
+
+/**
+ * Take a copy now. Returns `{ skipped: reason }` rather than throwing when it
+ * simply cannot run — an unplugged USB stick must never interrupt service.
+ */
+function runBackup({ reason = 'manual', force = false } = {}) {
+  if (!force && db.getSetting('backup_enabled') !== '1') return { skipped: 'disabled' };
+
+  const folder = backupFolder();
+  if (!folder.configured) return { skipped: 'no-folder' };
+  if (!folder.reachable) {
+    db.audit('backup_failed', `folder not reachable: ${folder.dir}`, 'system');
+    return { skipped: 'unreachable', dir: folder.dir };
+  }
+
+  const now = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const stamp = `${db.businessDate()}_${p2(now.getHours())}${p2(now.getMinutes())}${p2(now.getSeconds())}`;
+  const filePath = path.join(folder.dir, `${BACKUP_PREFIX}${stamp}.db`);
+
+  try {
+    backupDb(filePath);
+  } catch (err) {
+    db.audit('backup_failed', `${reason}: ${err.message}`, 'system');
+    return { skipped: 'error', error: err.message };
+  }
+
+  const pruned = pruneBackups(db.getSetting('backup_keep'));
+  db.setSetting('last_backup_at', now.toISOString());
+  db.audit('backup',
+    `${reason} -> ${path.basename(filePath)}${pruned ? ` (pruned ${pruned})` : ''}`, 'system');
+
+  return { filePath, bytes: fs.statSync(filePath).size, pruned, reason };
+}
+
+/** True when nothing has been backed up yet on the current business day. */
+function backupIsDue() {
+  const last = db.getSetting('last_backup_at');
+  if (!last) return true;
+  return db.businessDate(last) !== db.businessDate();
+}
+
+function runBackupIfDue(reason) {
+  if (!backupIsDue()) return { skipped: 'already-today' };
+  return runBackup({ reason });
+}
+
+function backupStatus() {
+  const folder = backupFolder();
+  const copies = listBackups();
+  return {
+    ...folder,
+    enabled: db.getSetting('backup_enabled') === '1',
+    keep: Number(db.getSetting('backup_keep') || 30),
+    lastAt: db.getSetting('last_backup_at') || null,
+    due: backupIsDue(),
+    count: copies.length,
+    newest: copies[0] || null,
+    recent: copies.slice(0, 5),
+  };
+}
+
 module.exports = {
   exportCsv, exportBundle, backupDb, reportNames, runReport, toCsv, money,
   buildReportHtml,
+  runBackup, runBackupIfDue, backupStatus, listBackups, pruneBackups, backupIsDue,
 };

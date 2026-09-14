@@ -117,7 +117,10 @@
       <button id="completeSale" class="btn primary big" disabled>Complete Sale</button>
     </div>
 
-    <h3 class="panel-title mt">Recent</h3>
+    <div class="recent-head">
+      <h3 class="panel-title mt">Recent</h3>
+      <button id="undoLast" class="btn small ghost" disabled>Undo Last Sale</button>
+    </div>
     <div id="recentList" class="recent-list"></div>
   </section>
 </main>
@@ -391,6 +394,28 @@
       <button id="saveSettings" class="btn primary">Save Rules</button>
       <span id="setSaved" class="saved-flash hidden">Saved</span>
     </div>
+  </section>
+
+  <section class="panel wide">
+    <h3 class="panel-title">Backups</h3>
+    <p class="hint">
+      Everything lives in one file on this machine. Point this at a USB stick or
+      a shared drive and a copy is taken automatically when a shift closes and
+      once a day — so a dead disk costs you nothing.
+    </p>
+    <div id="backupStatus" class="notice">Checking…</div>
+    <div class="row-actions" style="margin-top:12px">
+      <button id="backupChoose" class="btn primary small">Choose Folder</button>
+      <button id="backupNow" class="btn small">Back Up Now</button>
+      <button id="backupOpen" class="btn small ghost">Open Folder</button>
+      <label class="chk" style="margin-left:6px">
+        <input type="checkbox" id="backupEnabled" /> Back up automatically
+      </label>
+      <label class="lbl" style="flex-direction:row;align-items:center;gap:7px">
+        Keep <input id="backupKeep" class="input tiny" type="number" min="1" max="999" /> copies
+      </label>
+    </div>
+    <div id="backupList" class="backup-list"></div>
   </section>
 
   <section class="panel">

@@ -84,6 +84,14 @@ contextBridge.exposeInMainWorld('api', {
     purgePii: call('settings:purgePii'),
   },
 
+  backup: {
+    status: call('backup:status'),
+    now: call('backup:now'),
+    list: call('backup:list'),
+    chooseDir: call('backup:chooseDir'),
+    openDir: call('backup:openDir'),
+  },
+
   exporter: {
     bundle: call('export:bundle'),
     csv: call('export:csv'),

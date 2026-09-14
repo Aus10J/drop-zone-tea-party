@@ -1120,6 +1120,75 @@ function main() {
   copy.close();
 
   /* ---------------------------------------------------------------- */
+  section('Automatic backups');
+  const backupDir = path.join(tmp, 'usb-stick');
+  fs.mkdirSync(backupDir, { recursive: true });
+
+  eq('nothing is backed up before a folder is chosen',
+    exporter.runBackup({ reason: 'test', force: true }).skipped, 'no-folder');
+  check('and the status says so', !exporter.backupStatus().configured);
+
+  db.setSetting('backup_dir', backupDir);
+  const firstBackup = exporter.runBackup({ reason: 'test', force: true });
+  check('a copy is written once a folder is set', !!firstBackup.filePath, JSON.stringify(firstBackup));
+  check('the file exists on disk', fs.existsSync(firstBackup.filePath));
+  check('and is a real database', (() => {
+    const Database = require('better-sqlite3');
+    const copy = new Database(firstBackup.filePath, { readonly: true });
+    const n = copy.prepare('SELECT COUNT(*) n FROM orders').get().n;
+    copy.close();
+    return n === db.handle().prepare('SELECT COUNT(*) n FROM orders').get().n;
+  })());
+  check('the backup is audited',
+    db.handle().prepare("SELECT COUNT(*) n FROM audit_log WHERE event='backup'").get().n >= 1);
+
+  const backupState = exporter.backupStatus();
+  check('status reports the folder as reachable', backupState.configured && backupState.reachable);
+  eq('and counts the copy', backupState.count, 1);
+  check('and records when it ran', !!backupState.lastAt);
+  check('nothing further is due today', !exporter.backupIsDue());
+  eq('so the daily run stands down',
+    exporter.runBackupIfDue('daily').skipped, 'already-today');
+
+  // Rotation: a night's worth of copies must not fill a stick.
+  db.setSetting('backup_keep', '3');
+  for (let i = 0; i < 5; i++) {
+    fs.writeFileSync(path.join(backupDir, `bar-backup-2026-01-0${i + 1}_120000.db`), 'x');
+  }
+  check('extra copies exist before pruning', exporter.listBackups().length >= 6);
+  exporter.runBackup({ reason: 'test rotation', force: true });
+  eq('only the newest are kept', exporter.listBackups().length, 3);
+  check('unrelated files in the folder are left alone', (() => {
+    fs.writeFileSync(path.join(backupDir, 'do-not-touch.txt'), 'keep me');
+    exporter.runBackup({ reason: 'test', force: true });
+    return fs.existsSync(path.join(backupDir, 'do-not-touch.txt'));
+  })());
+  db.setSetting('backup_keep', '30');
+
+  // An unplugged drive must never interrupt service.
+  db.setSetting('backup_dir', path.join(tmp, 'no-such-drive'));
+  const gone = exporter.runBackup({ reason: 'test', force: true });
+  eq('an unreachable folder is skipped, not thrown', gone.skipped, 'unreachable');
+  check('and the failure is recorded',
+    db.handle().prepare("SELECT COUNT(*) n FROM audit_log WHERE event='backup_failed'").get().n >= 1);
+  check('the app can still take orders', db.createOrder({
+    patronId: rid, items: [{ productId: beerId, qty: 1 }],
+  }).orderId > 0);
+
+  db.setSetting('backup_dir', backupDir);
+  db.setSetting('backup_enabled', '0');
+  eq('switching it off stops automatic copies',
+    exporter.runBackup({ reason: 'test' }).skipped, 'disabled');
+  check('but a manual copy still works',
+    !!exporter.runBackup({ reason: 'manual', force: true }).filePath);
+  db.setSetting('backup_enabled', '1');
+
+  // A copy taken yesterday means today's is due again.
+  db.setSetting('last_backup_at', new Date(Date.now() - 36 * 3600 * 1000).toISOString());
+  check('a stale backup is due', exporter.backupIsDue());
+  check('and the daily run takes one', !!exporter.runBackupIfDue('daily').filePath);
+
+  /* ---------------------------------------------------------------- */
   section('Privacy controls');
   db.setSetting('store_names', '0');
   const anon = db.resolveCard(cac.parseScan('N5QQ1WW2EE3NONAME PERSON     ZZ9XX8CC7VV6BB5NN4MM3'));

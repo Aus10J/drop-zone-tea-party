@@ -305,7 +305,9 @@ once), plus **Void whole order** for cancelling the lot. Removing a drink:
 - and voids the order outright if nothing is left on it.
 
 It needs a reason and the manager PIN, and both land in the audit log. Tonight's
-last few orders can also be voided straight from **Recent** on the Bar screen.
+last few orders can also be voided straight from **Recent** on the Bar screen,
+and **Undo Last Sale** on that screen reverses the most recent sale in one tap —
+for the wrong-button case, which needs to be quick.
 
 **Deleting keeps their sales.** The drinks were poured and the money was taken,
 so the orders are detached rather than destroyed — the person disappears, the
@@ -406,6 +408,31 @@ is a perfectly good backup — do it weekly onto a separate drive.
 
 ---
 
+## Backups
+
+Everything lives in one SQLite file on one machine, so that machine is a single
+point of failure for the whole season. **Admin → Backups** fixes that: point it
+at a USB stick or a shared drive and a copy is taken automatically
+
+- when a shift is closed,
+- once per business day, and
+- on launch, if a day was missed because the bar was shut or the box was off.
+
+Old copies are rotated out (30 by default) so a stick cannot fill up. Only
+files the app itself wrote are ever deleted — anything else in that folder is
+left alone.
+
+**An unplugged drive never interrupts service.** A backup that cannot run is
+skipped and logged, the bartender is told at shift close, and the till keeps
+taking orders. The Admin panel says plainly whether backups are actually
+happening, when the last one ran, and how many copies exist.
+
+Each copy is a complete, self-contained database — open it in DB Browser for
+SQLite, or drop it back at `%APPDATA%\Drop Zone Tea Party\data\bar.db` to
+restore.
+
+---
+
 ## Where everything lives
 
 | What | Where |
@@ -465,8 +492,8 @@ the warning entirely means buying a code-signing certificate.
 ```bash
 npm install          # rebuilds the native SQLite module for Electron
 npm start            # run the app
-npm test             # 405 main-process checks: limits, caps, rollover, lookup, sales
-npm run test:ui      # 131 checks driving the real window, incl. a real PDF render
+npm test             # 426 main-process checks: limits, caps, rollover, lookup, sales
+npm run test:ui      # 143 checks driving the real window, incl. a real PDF render
 npm run dist:win     # build the Windows x64 installer + portable exe
                      # (--publish never: releases are published by CI, not by
                      #  electron-builder, which otherwise tries to publish by

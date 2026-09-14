@@ -159,6 +159,11 @@ const DEFAULT_SETTINGS = {
   store_names: '1',
   pii_retention_days: '0',       // 0 = keep indefinitely
   low_stock_warn: '1',
+  // Backups are on by default but inert until a folder is chosen, so picking
+  // one is the only step needed to start protecting the data.
+  backup_enabled: '1',
+  backup_dir: '',
+  backup_keep: '30',
   block_sale_when_out_of_stock: '0',
   bartender_name: '',
   schema_version: '1',
