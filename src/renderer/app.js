@@ -602,11 +602,14 @@ async function submitManualScan() {
  */
 function promptAddPatron(term) {
   const looksNumeric = /^\d+$/.test(term);
-  // A typed word is almost always a surname, so that is where it lands.
+  // Anything long is a scanned card rather than something typed. Keep it and
+  // key the new patron to it, so scanning again finds this record.
+  const scanned = term.length >= 15 ? term : null;
+
   const firstInput = el('input', { class: 'input', type: 'text', placeholder: 'optional' });
   const lastInput = el('input', {
     class: 'input', type: 'text', placeholder: 'e.g. Ferreira',
-    value: looksNumeric ? '' : term,
+    value: (looksNumeric || scanned) ? '' : term,
   });
   const idInput = el('input', {
     class: 'input mono', type: 'text', inputmode: 'numeric', maxlength: '10',
@@ -618,6 +621,7 @@ function promptAddPatron(term) {
       firstName: firstInput.value.trim(),
       lastName: lastInput.value.trim(),
       dodId: idInput.value.trim(),
+      cardRaw: scanned,
     });
     if (!res) return;
     close();
@@ -630,19 +634,26 @@ function promptAddPatron(term) {
   };
 
   openModal({
-    title: `No match for “${term}”`,
+    title: scanned ? 'New card — add this patron' : `No match for “${term}”`,
     body: [
-      el('p', { text: 'Add them now, or cancel and try a different spelling.' }),
+      el('p', { text: scanned
+        ? 'This card is not on file. Add the patron and the card is saved with them.'
+        : 'Add them now, or cancel and try a different spelling.' }),
+      scanned ? el('div', { class: 'scanned-card' }, [
+        el('div', { class: 'scanned-label', text: 'Scanned card — saved with this patron' }),
+        el('div', { class: 'scanned-value mono', text: scanned }),
+      ]) : null,
       el('div', { class: 'form' }, [
         el('div', { class: 'name-row' }, [
           el('label', { class: 'lbl' }, ['First name', firstInput]),
           el('label', { class: 'lbl' }, ['Last name', lastInput]),
         ]),
-        el('label', { class: 'lbl' }, ['DoD ID', idInput]),
+        el('label', { class: 'lbl' }, ['Customer ID', idInput]),
       ]),
-      el('p', { class: 'hint', text:
-        'A last name on its own is enough. Adding the DoD ID means a scan of '
-        + 'their card will find this same record later instead of making a second one.' }),
+      el('p', { class: 'hint', text: scanned
+        ? 'A name is optional — the card alone identifies them from now on.'
+        : 'A last name on its own is enough. Adding the customer ID means a scan '
+          + 'of their card will find this same record later instead of making a second one.' }),
     ],
     actions: [
       { label: 'Cancel', cls: 'ghost', onClick: (close) => { close(); $('#manualScan').select(); } },
@@ -680,7 +691,7 @@ function choosePatron(term, matches) {
     el('span', { class: 'match-main' }, [
       el('span', { class: 'match-name', text: m.label }),
       el('span', { class: 'match-sub', text:
-        [m.dod_id ? `DoD ${m.dod_id}` : null,
+        [m.dod_id ? `ID ${m.dod_id}` : null,
          m.drinks_today ? `${m.drinks_today} tonight` : null,
          `last in ${fmtDate(m.last_seen_at)}`].filter(Boolean).join(' · ') }),
     ]),
@@ -730,7 +741,7 @@ function renderPatronPanel() {
 
   $('#pName').textContent = s.label;
   // Show the stored identifier underneath whenever it is not already the name.
-  $('#pLast4').textContent = p.display_name && p.dod_id ? `DoD ${p.dod_id}`
+  $('#pLast4').textContent = p.display_name && p.dod_id ? `ID ${p.dod_id}`
     : (!p.display_name && p.dod_id) ? ''            // already the headline
     : p.last4 ? `#${p.last4}` : '';
   $('#pVisits').textContent = s.visits > 1 ? `${s.visits} visits` : 'first visit';
@@ -828,7 +839,11 @@ function editPatronDetails(patron, onSaved) {
   const dob = el('input', { class: 'input', type: 'date', value: p.dob || '' });
   const dodId = el('input', {
     class: 'input mono', type: 'text', inputmode: 'numeric', maxlength: '10',
-    value: p.dod_id || '', placeholder: '10-digit DoD ID',
+    value: p.dod_id || '', placeholder: '10-digit customer ID',
+  });
+  const cardInput = el('input', {
+    class: 'input mono', type: 'text', autocomplete: 'off', spellcheck: 'false',
+    placeholder: p.card_payload ? 'scan again to replace the saved card' : 'scan the card here',
   });
   const notes = el('input', { class: 'input', type: 'text', value: p.notes || '', placeholder: 'e.g. DD tonight, allergic to…' });
 
@@ -837,16 +852,24 @@ function editPatronDetails(patron, onSaved) {
     body: [
       el('p', { class: 'hint', text: p.dod_id
         ? 'Everything here is optional and can be corrected at any time.'
-        : 'No DoD ID came off this card. Add it and they become searchable by ID.' }),
+        : 'No customer ID came off this card. Add it and they become searchable by it.' }),
       el('div', { class: 'form' }, [
         el('div', { class: 'name-row' }, [
           el('label', { class: 'lbl' }, ['First name', firstName]),
           el('label', { class: 'lbl' }, ['Last name', lastName]),
         ]),
-        el('label', { class: 'lbl' }, ['DoD ID', dodId]),
+        el('label', { class: 'lbl' }, ['Customer ID', dodId]),
         el('label', { class: 'lbl' }, ['Date of birth', dob]),
         el('label', { class: 'lbl' }, ['Notes', notes]),
+        el('label', { class: 'lbl' }, [
+          p.card_payload ? 'Card on file — scan to replace' : 'No card on file — scan to attach',
+          cardInput,
+        ]),
       ]),
+      el('p', { class: 'hint', text: p.card_payload
+        ? 'Their card is saved, so scanning it finds this record.'
+        : 'Scanning a card here saves it against this patron, so future scans '
+          + 'find them instead of creating a second record.' }),
     ],
     actions: [
       { label: 'Cancel', cls: 'ghost' },
@@ -862,8 +885,19 @@ function editPatronDetails(patron, onSaved) {
             },
           });
           if (!status) return;   // e.g. that ID already belongs to someone else
+
+          // Attach the card last: it can fail on its own (already on someone
+          // else) and should not silently discard the other edits.
+          const scannedCard = cardInput.value.trim();
+          let finalStatus = status;
+          if (scannedCard) {
+            const linked = await tryReq(window.api.patron.linkCard, { id: p.id, raw: scannedCard });
+            if (!linked) return;
+            finalStatus = linked;
+            toast('Card saved to this patron.', 'ok');
+          }
           close();
-          if (onSaved) onSaved(status);
+          if (onSaved) onSaved(finalStatus);
         },
       },
     ],
@@ -2594,7 +2628,7 @@ function wireCalibration() {
     if (!raw) { box.className = 'notice warn'; box.textContent = 'Scan a card into the box above first.'; return; }
     if (!/^\d{9,10}$/.test(knownId.replace(/\D/g, ''))) {
       box.className = 'notice warn';
-      box.textContent = 'Enter the full DoD ID from the front of that same card (9 or 10 digits).';
+      box.textContent = 'Enter the full customer ID from the front of that same card (9 or 10 digits).';
       return;
     }
 

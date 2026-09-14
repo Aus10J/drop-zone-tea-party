@@ -444,7 +444,7 @@ function composeName(first, last) {
 function labelFor(p) {
   if (!p) return 'Walk-in';
   if (p.display_name) return p.display_name;
-  if (p.dod_id) return `DoD ${p.dod_id}`;
+  if (p.dod_id) return `ID ${p.dod_id}`;
   if (p.last4) return `ID #${p.last4}`;
   if (p.card_payload) return `Card …${String(p.card_payload).slice(-5)}`;
   return `Patron ${p.id}`;
@@ -709,23 +709,33 @@ function resolveCard(parsed) {
  * than a duplicate. With only a name there is nothing stable to key on, so a
  * random key is used and they are found by searching the name.
  */
-function createPatron({ name, firstName, lastName, dodId } = {}) {
-  const digits = String(dodId || '').replace(/\D/g, '');
+function createPatron({ name, firstName, lastName, dodId, cardParsed } = {}) {
+  const card = cardParsed && cardParsed.raw ? cardParsed : null;
 
-  // Accept either the split fields or a single typed name.
+  // A scanned card can supply the ID and the name by itself.
+  let digits = String(dodId || '').replace(/\D/g, '');
+  if (!digits && card && card.edipi) digits = card.edipi;
+
   let first = String(firstName || '').trim() || null;
   let last = String(lastName || '').trim() || null;
   if (!first && !last && name) ({ first, last } = splitName(name));
+  if (!first && !last && card && card.name) ({ first, last } = splitName(card.name));
   const display = composeName(first, last);
 
-  if (!digits && !display) throw new Error('Enter a name or a DoD ID.');
+  if (!digits && !display && !card) {
+    throw new Error('Scan a card, or enter a name or a customer ID.');
+  }
 
   if (digits) {
     const existing = db.prepare('SELECT * FROM patrons WHERE dod_id = ?').get(digits);
     if (existing) return { patron: existing, isNew: false };
   }
 
-  const cardHash = digits ? hmacId(digits) : hmacId(`manual:${crypto.randomUUID()}`);
+  // Identity keys off the card when there is one, so scanning it later lands
+  // here rather than creating a second record.
+  const cardHash = card ? hmacId(card.raw)
+    : digits ? hmacId(digits)
+    : hmacId(`manual:${crypto.randomUUID()}`);
   const clash = db.prepare('SELECT * FROM patrons WHERE card_hash = ?').get(cardHash);
   if (clash) return { patron: clash, isNew: false };
 
@@ -737,7 +747,7 @@ function createPatron({ name, firstName, lastName, dodId } = {}) {
       VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
     cardHash,
     digits || null,
-    digits || null,
+    card ? card.raw : (digits || null),
     digits ? hmacId(`edipi:${digits}`) : null,
     digits ? digits.slice(-4) : null,
     keepNames ? display : null,
@@ -749,6 +759,56 @@ function createPatron({ name, firstName, lastName, dodId } = {}) {
   const patron = db.prepare('SELECT * FROM patrons WHERE id = ?').get(r.lastInsertRowid);
   audit('patron_created_manually', labelFor(patron), 'bartender');
   return { patron, isNew: true };
+}
+
+/**
+ * Attach a scanned card to somebody already on file.
+ *
+ * Without this, a patron added by name and then scanned becomes two records:
+ * identity keys off the card, and they had no card. Linking re-keys them to it
+ * and backfills anything the barcode yields that we did not already have.
+ */
+function linkCard(patronId, parsed) {
+  const patron = db.prepare('SELECT * FROM patrons WHERE id = ?').get(patronId);
+  if (!patron) throw new Error('Patron not found.');
+  if (!parsed || !parsed.raw) throw new Error('Nothing was scanned.');
+
+  const cardHash = hmacId(parsed.raw);
+  const clash = db.prepare(
+    'SELECT * FROM patrons WHERE card_hash = ? AND id != ?').get(cardHash, patronId);
+  if (clash) throw new Error(`That card is already on ${labelFor(clash)}.`);
+
+  let first = null, last = null;
+  if (parsed.name) ({ first, last } = splitName(parsed.name));
+  const keepNames = getSetting('store_names') === '1';
+
+  db.prepare(`UPDATE patrons SET
+      card_hash    = ?,
+      card_payload = ?,
+      dod_id       = COALESCE(dod_id, ?),
+      dod_id_hash  = COALESCE(dod_id_hash, ?),
+      last4        = COALESCE(last4, ?),
+      display_name = COALESCE(display_name, ?),
+      first_name   = COALESCE(first_name, ?),
+      last_name    = COALESCE(last_name, ?),
+      dob          = COALESCE(dob, ?),
+      last_seen_at = ?
+    WHERE id = ?`).run(
+    cardHash,
+    parsed.raw,
+    parsed.edipi || null,
+    parsed.edipi ? hmacId(`edipi:${parsed.edipi}`) : null,
+    parsed.last4 || null,
+    keepNames ? composeName(first, last) : null,
+    keepNames ? first : null,
+    keepNames ? last : null,
+    parsed.dob || null,
+    nowIso(),
+    patronId
+  );
+
+  audit('card_linked', `card attached to ${labelFor(patron)}`, 'bartender');
+  return patronStatus(patronId);
 }
 
 function patronStatus(patronId) {
@@ -812,7 +872,7 @@ function updatePatron(id, fields) {
       const clash = db.prepare(
         'SELECT id FROM patrons WHERE dod_id = ? AND id != ?').get(digits, id);
       if (clash) {
-        throw new Error(`DoD ID ${digits} is already on ${labelFor(
+        throw new Error(`Customer ID ${digits} is already on ${labelFor(
           db.prepare('SELECT * FROM patrons WHERE id = ?').get(clash.id))}.`);
       }
       sets.push('dod_id = ?', 'last4 = ?', 'dod_id_hash = ?');
@@ -1650,7 +1710,8 @@ module.exports = {
   getSetting, setSetting, allSettings, verifyPin, setPin,
   currentShift, openShift, closeShift, shiftSummary, rollShiftIfStale,
   resolveCard, patronStatus, updatePatron, setBan, listPatrons, patronHistory,
-  deletePatron, patronFootprint, findPatrons, createPatron, splitName, composeName,
+  deletePatron, patronFootprint, findPatrons, createPatron, linkCard,
+  splitName, composeName,
   drinksToday, countsToday, limitSettings, limitGroup, purgeOldPii, labelFor,
   GROUPS, GROUP_LABELS,
   listProducts, saveProduct, archiveProduct, setProductPrice, bulkSetPrice,

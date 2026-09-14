@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('api', {
     history: call('patron:history'),
     find: call('patron:find'),
     create: call('patron:create'),
+    linkCard: call('patron:linkCard'),
     footprint: call('patron:footprint'),
     delete: call('patron:delete'),
   },

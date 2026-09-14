@@ -573,3 +573,11 @@ table.grid td .input { height: 30px; }
 }
 .auto-cal .row-actions { margin-top: 4px; }
 .auto-cal .input { width: 220px; }
+
+/* The scanned payload shown when adding a patron from a new card. */
+.scanned-card {
+  border: 1px solid var(--af-blue-lift); border-radius: 8px;
+  background: rgba(0,48,143,.16); padding: 9px 12px; margin-bottom: 12px;
+}
+.scanned-label { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--silver); }
+.scanned-value { font-size: 11.5px; color: var(--text-dim); word-break: break-all; margin-top: 4px; }

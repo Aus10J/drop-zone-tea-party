@@ -41,9 +41,9 @@
     <div id="scanIdle" class="scan-idle">
       <div class="scan-icon"></div>
       <h2>Scan or search</h2>
-      <p>Hold the card under the scanner, or type a name or DoD ID below.</p>
+      <p>Hold the card under the scanner, or type a name or customer ID below.</p>
       <div class="manual">
-        <input id="manualScan" type="text" placeholder="last name or DoD ID"
+        <input id="manualScan" type="text" placeholder="last name or customer ID"
                autocomplete="off" spellcheck="false" />
         <button id="manualScanBtn" class="btn">Look Up</button>
       </div>
@@ -175,7 +175,7 @@
     <div class="panel-head">
       <h3 class="panel-title">Patrons</h3>
       <div class="panel-head-actions">
-        <input id="patronSearch" class="input" type="text" placeholder="Search name, DoD ID or notes…" />
+        <input id="patronSearch" class="input" type="text" placeholder="Search name, customer ID or notes…" />
       </div>
     </div>
     <p class="hint">
@@ -186,7 +186,7 @@
     </p>
     <div class="table-wrap">
       <table class="grid" id="patronTable">
-        <thead><tr><th>Patron</th><th>DoD ID</th><th class="num">Tonight</th><th>Status</th><th>Last seen</th><th>First seen</th><th>Notes</th><th></th></tr></thead>
+        <thead><tr><th>Patron</th><th>Customer ID</th><th class="num">Tonight</th><th>Status</th><th>Last seen</th><th>First seen</th><th>Notes</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -465,15 +465,15 @@
       </label>
 
       <div class="auto-cal">
-        <h4 style="margin-top:0">Find the DoD ID for me</h4>
+        <h4 style="margin-top:0">Find the Customer ID for me</h4>
         <p class="hint">
           The barcode does not carry the ID as readable text, which is why a raw
           scan looks like nonsense. Scan <em>your own</em> card above, type your
-          own DoD ID here, and the app will work out where it is hidden.
+          own customer ID here, and the app will work out where it is hidden.
         </p>
         <div class="row-actions">
           <input id="calKnownId" class="input mono" type="text" inputmode="numeric"
-                 maxlength="10" placeholder="your 10-digit DoD ID" autocomplete="off" />
+                 maxlength="10" placeholder="your 10-digit customer ID" autocomplete="off" />
           <button id="calDetect" class="btn primary small">Find It</button>
         </div>
         <div id="calDetectResult" class="notice hidden"></div>
@@ -494,7 +494,7 @@
             <td class="cal-out mono">—</td>
           </tr>
           <tr data-field="edipi">
-            <th>DoD ID</th>
+            <th>Customer ID</th>
             <td><input class="input tiny cal-start" type="number" min="0" /></td>
             <td><input class="input tiny cal-len" type="number" min="0" /></td>
             <td><select class="input cal-enc">

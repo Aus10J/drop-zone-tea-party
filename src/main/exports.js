@@ -40,7 +40,7 @@ const QUERIES = {
   orders: (h, from, to) => h.prepare(`
     SELECT o.id AS order_id, o.business_date, o.created_at, o.shift_id,
            COALESCE(p.display_name, p.dod_id, '#'||p.last4, 'Walk-in') AS patron,
-           p.dod_id AS patron_dod_id,
+           p.dod_id AS patron_customer_id,
            o.standard_drinks, o.subtotal_cents, o.payment_method, o.bartender,
            o.voided, o.void_reason, o.override_reason
       FROM orders o LEFT JOIN patrons p ON p.id = o.patron_id
@@ -59,7 +59,7 @@ const QUERIES = {
   patron_drinks_by_day: (h, from, to) => h.prepare(`
     SELECT o.business_date,
            COALESCE(p.display_name, p.dod_id, '#'||p.last4, 'Patron '||p.id) AS patron,
-           p.dod_id AS patron_dod_id,
+           p.dod_id AS patron_customer_id,
            COUNT(*) AS orders,
            ROUND(SUM(o.standard_drinks), 2) AS standard_drinks,
            SUM(o.subtotal_cents) AS spend_cents,
@@ -173,7 +173,7 @@ function exportBundle({ from, to, dirPath, includeDb = true }) {
     `bar.db is a complete SQLite database — open it with DB Browser for SQLite,`,
     `Power BI, Python, or any ODBC/SQLite tool. It is the authoritative copy.`,
     ``,
-    `Patrons are identified by the DoD ID read from their card, or by the raw`,
+    `Patrons are identified by the customer ID read from their card, or by the raw`,
     `barcode payload where no ID could be parsed. These files therefore contain`,
     `personal identifiers — handle and store them accordingly.`,
     ``,
@@ -412,8 +412,8 @@ function buildReportHtml(rep, venueName) {
 
   <footer>
     Generated offline by ${esc(venueName)} POS. Patrons are identified by the
-    DoD ID read from their card, or by a short card reference where none could
-    be parsed. Contains personal identifiers — handle accordingly.
+    customer ID read from their card, or by a short card reference where none
+    could be parsed. Contains personal identifiers — handle accordingly.
   </footer>
 </body></html>`;
 }

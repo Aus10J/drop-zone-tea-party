@@ -221,7 +221,7 @@ function main() {
   const byId = db.resolveCard(cac.parseScan('1928374650'));
   eq('DoD ID stored', byId.patron.dod_id, '1928374650');
   eq('and kept as the payload too', byId.patron.card_payload, '1928374650');
-  eq('labelled by DoD ID with no name on file', db.labelFor(byId.patron), 'DoD 1928374650');
+  eq('labelled by DoD ID with no name on file', db.labelFor(byId.patron), 'ID 1928374650');
 
   // A barcode with no readable ID still gets a usable label, unprompted.
   const opaque = db.resolveCard(cac.parseScan('ZZQQ9911223344556677889900AABBCCDDEEFF0011'));
@@ -544,7 +544,7 @@ function main() {
   eq('edits apply', db.patronStatus(did).patron.display_name, 'Temp Patron');
   eq('notes save', db.patronStatus(did).patron.notes, 'to be removed');
   db.updatePatron(did, { display_name: '' });
-  eq('clearing a name falls back to the DoD ID', db.patronStatus(did).label, 'DoD 9998887770');
+  eq('clearing a name falls back to the DoD ID', db.patronStatus(did).label, 'ID 9998887770');
 
   eq('no footprint before they buy anything', db.patronFootprint(did).orders, 0);
   const doomedOrder = db.createOrder({
@@ -664,7 +664,7 @@ function main() {
   check('the ID hash is set so a reissued card re-links', !!withId.dod_id_hash);
   check('now a partial ID finds them', ids(db.findPatrons('555123')).includes(nid));
   check('and the last four finds them', ids(db.findPatrons('9876')).includes(nid));
-  eq('and they label by ID', db.patronStatus(nid).label, 'DoD 5551239876');
+  eq('and they label by ID', db.patronStatus(nid).label, 'ID 5551239876');
 
   // Scanning that ID now lands on the same patron rather than making a new one.
   const rescan = db.resolveCard(cac.parseScan('5551239876'));
@@ -853,12 +853,63 @@ function main() {
 
   check('an empty submission is refused', (() => {
     try { db.createPatron({}); return false; }
-    catch (err) { return /name or a DoD ID/i.test(err.message); }
+    catch (err) { return /name or a customer ID/i.test(err.message); }
   })());
   check('whitespace only is refused', (() => {
     try { db.createPatron({ name: '   ', dodId: '  ' }); return false; }
-    catch (err) { return /name or a DoD ID/i.test(err.message); }
+    catch (err) { return /name or a customer ID/i.test(err.message); }
   })());
+
+  /* ---------------------------------------------------------------- */
+  section('Saving a scanned card to a patron');
+  const CARD_A = 'N7QQ2WW3EE4MURPHY SEAN T     ZZ1XX2CC3VV4BB5NN6MM7';
+
+  // The bug: added by surname, then scanned, used to become two records.
+  const typedOnly = db.createPatron({ lastName: 'Murphy' });
+  eq('added by name has no card yet', typedOnly.patron.card_payload, null);
+  eq('and is not findable by a card scan', db.findPatrons(CARD_A).length, 0);
+
+  const linked = db.linkCard(typedOnly.patron.id, cac.parseScan(CARD_A));
+  eq('linking saves the scanned payload', linked.patron.card_payload, CARD_A);
+  check('and the card now finds them',
+    ids(db.findPatrons(CARD_A)).includes(typedOnly.patron.id));
+
+  const beforeScan = db.handle().prepare('SELECT COUNT(*) n FROM patrons').get().n;
+  const rescanned = db.resolveCard(cac.parseScan(CARD_A));
+  eq('scanning it lands on the same patron', rescanned.patron.id, typedOnly.patron.id);
+  check('rather than creating a second', !rescanned.isNew);
+  eq('so the roster does not grow',
+    db.handle().prepare('SELECT COUNT(*) n FROM patrons').get().n, beforeScan);
+  eq('their name survived the link', rescanned.patron.last_name, 'Murphy');
+
+  check('a card already on someone else is refused', (() => {
+    const other = db.createPatron({ lastName: 'Nobody' });
+    try { db.linkCard(other.patron.id, cac.parseScan(CARD_A)); return false; }
+    catch (err) { return /already on/i.test(err.message); }
+  })());
+  check('and an empty scan is refused', (() => {
+    try { db.linkCard(typedOnly.patron.id, cac.parseScan('')); return false; }
+    catch (err) { return /nothing was scanned/i.test(err.message); }
+  })());
+
+  // Creating straight from a scan keys identity to the card from the start.
+  const CARD_B = 'N4RR8TT7YY6OKAFOR TARA L     QQ3PP2LL1KK0JJ9HH8';
+  const fromCard = db.createPatron({ cardParsed: cac.parseScan(CARD_B) });
+  check('a patron can be created from a scan alone', fromCard.isNew);
+  eq('the card is stored', fromCard.patron.card_payload, CARD_B);
+  check('the name is lifted off the barcode',
+    /OKAFOR/i.test(fromCard.patron.display_name || ''), fromCard.patron.display_name);
+  eq('and scanning it finds them',
+    db.resolveCard(cac.parseScan(CARD_B)).patron.id, fromCard.patron.id);
+
+  const withBoth = db.createPatron({
+    lastName: 'Bennett', dodId: '2223334445',
+    cardParsed: cac.parseScan('N9ZZ8YY7XX6BENNETT ADA      WW5VV4UU3TT2'),
+  });
+  eq('a card and a typed ID can be given together', withBoth.patron.dod_id, '2223334445');
+  check('with the card kept as the identity key', !!withBoth.patron.card_payload);
+  check('findable by the ID', ids(db.findPatrons('222333')).includes(withBoth.patron.id));
+  check('and by the card', ids(db.findPatrons('BENNETT ADA')).includes(withBoth.patron.id));
 
   /* ---------------------------------------------------------------- */
   section('Legacy walk-in rows still read');
@@ -1133,8 +1184,8 @@ function main() {
 
   const patronRows = exporter.runReport('patron_drinks_by_day', today, today);
   check('per-patron drink summary produced', patronRows.length >= 1);
-  check('the DoD ID travels with the export',
-    Object.keys(patronRows[0]).includes('patron_dod_id'),
+  check('the customer ID travels with the export',
+    Object.keys(patronRows[0]).includes('patron_customer_id'),
     Object.keys(patronRows[0]).join(','));
   check('the card hash never leaves the database',
     !Object.keys(patronRows[0]).some((k) => /card_hash/i.test(k)));

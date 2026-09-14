@@ -11,7 +11,7 @@ Everything lives in one SQLite file you can copy to a thumb drive.
 
 | | |
 |---|---|
-| **Scan** | CAC (or driver's licence, or typed DoD ID) identifies the patron in about a second. Every sale is tied to a card |
+| **Scan** | CAC (or driver's licence, or typed customer ID) identifies the patron in about a second. Every sale is tied to a card |
 | **Track** | Running drink count per patron per night — a night total plus a cap per category |
 | **Enforce** | At any cap the sale blocks until a manager PIN + written reason is entered — and the override is logged with which cap was broken |
 | **Sell** | Tap a category, tap a drink, done. Card only. The screen resets for the next customer on every sale |
@@ -36,20 +36,20 @@ The app watches for a fast burst of keystrokes ending in Enter. You do not
 need to click into a box first — just scan.
 
 **No scanner needed.** The box under the scan prompt is a **lookup** that takes
-anything — a surname, part of a DoD ID, a last four, or a full ID. Letters are
+anything — a surname, part of a customer ID, a last four, or a full ID. Letters are
 fine; nothing has to be numeric.
 
 - **One match** → loads them.
 - **Several** → a picker showing name, ID, drinks tonight and last visit.
-- **None** → offers to add them, with **First name / Last name / DoD ID**
+- **None** → offers to add them, with **First name / Last name / customer ID**
   fields and whatever you typed already filled in (a word lands in Last name,
-  digits in DoD ID). A last name on its own is enough; **the DoD ID is
+  digits in customer ID). A last name on its own is enough; **the customer ID is
   optional**. Because it asks rather than creating silently, a typo is caught
   before it becomes a duplicate.
 
 A card scanned into that box is unambiguous, so it is created without asking.
 
-**Adding the DoD ID is worth it when you have it.** Identity keys off the ID,
+**Adding the customer ID is worth it when you have it.** Identity keys off the ID,
 so a patron added by ID is found again when their card is later scanned. Added
 by name only, they are found by searching the name — a subsequent card scan
 would otherwise create a second record. You can attach an ID at any time from
@@ -205,7 +205,7 @@ fast as the thousandth scan of a regular.
 
 What gets stored is the identifier as read:
 
-- **The DoD ID**, when the scan yields one — a typed or scanned 10-digit ID, or
+- **The customer ID**, when the scan yields one — a typed or scanned 10-digit ID, or
   one decoded out of the barcode. The patron then shows as `DoD 1234567890`.
 - **The raw barcode payload**, always. Where no ID could be parsed, the patron
   shows as `Card …AB12` from the tail of that payload, which is still a stable,
@@ -220,17 +220,31 @@ automatically too; nothing is asked for. A name can be added or corrected later
 from **Edit details** on the Bar screen, and the age check switches on by
 itself once a date of birth is on file.
 
+### Saving a scanned card to a patron
+
+A patron's identity keys off their **card** when they have one. Someone added
+by typing a surname has no card, so scanning them later would create a second
+record. Two ways to avoid that:
+
+- **Scan first.** If a card is not on file the app offers to add the patron,
+  showing the scanned value and saving it with them. A name is optional.
+- **Attach afterwards.** Open them, hit **Edit details**, and scan into the
+  *card* field. The card is saved against that record, and every future scan
+  finds them. A card already belonging to someone else is refused by name.
+
+---
+
 ### Why a scan looks like nonsense
 
-A CAC's barcode does **not** carry the DoD ID as readable text. It is a
+A CAC's barcode does **not** carry the customer ID as readable text. It is a
 fixed-width packed payload, so scanning one produces a jumble of letters and
 digits. That is normal and the app is built for it: identity comes from a hash
 of the whole payload, so scanning works perfectly and the same card always
-finds the same patron. The DoD ID simply is not visible until the app is told
+finds the same patron. The customer ID simply is not visible until the app is told
 where in that jumble it sits.
 
-**Admin → Card Layout Calibration → "Find the DoD ID for me"** does that for
-you. Scan your own card into the box, type your own DoD ID, press **Find It**,
+**Admin → Card Layout Calibration → "Find the customer ID for me"** does that for
+you. Scan your own card into the box, type your own customer ID, press **Find It**,
 and it searches the payload for any slice that decodes to that ID — plain
 digits or base32 — and fills in the offsets. Press **Save Layout** and every
 card of that generation decodes from then on.
@@ -239,7 +253,7 @@ Worth doing with a **second card** before trusting it: a single card can throw
 up a coincidental match, and the tool tells you when more than one spot
 matched. Two cards agreeing on the same offset is conclusive.
 
-Once saved, returning patrons pick up their DoD ID automatically the next time
+Once saved, returning patrons pick up their customer ID automatically the next time
 they scan — existing records are backfilled, not orphaned. Names and dates of
 birth can be mapped the same way with the manual offset fields.
 
@@ -259,7 +273,7 @@ without a CAC.
 Worth being explicit, since this runs on an installation and holds records
 about service members.
 
-**Stored:** the DoD ID where the scan yields one, the raw barcode payload, a
+**Stored:** the customer ID where the scan yields one, the raw barcode payload, a
 salted hash of that payload (the internal lookup key), optionally a name and
 date of birth if the card yields them or someone types them, and the
 drink/purchase history.
@@ -280,7 +294,7 @@ Two controls in **Admin → Privacy & Records**:
   seen in *N* days. Drink history and totals survive. Runs at every launch and
   on demand.
 
-Exports include the DoD ID, since that is the identifier the reports are keyed
+Exports include the customer ID, since that is the identifier the reports are keyed
 on. The `card_hash` is internal and appears in no export or report.
 
 Whoever owns the machine and the installation's information-assurance folks
@@ -290,12 +304,12 @@ should sign off before it goes live — that call is above this README.
 
 ## Managing patrons
 
-The **Patrons** tab lists everyone on file with their DoD ID, what they have
+The **Patrons** tab lists everyone on file with their customer ID, what they have
 had tonight, and when they were last in. **Anyone already drinking tonight
 sorts to the top**, since mid-service that is almost always who is being looked
 for.
 
-Search matches names, full DoD IDs, the **last four** of an ID, notes, and the
+Search matches names, full customer IDs, the **last four** of an ID, notes, and the
 tail of a raw card payload for cards whose ID could not be parsed. The last
 four is derived from the stored ID automatically — nobody has to type it. Each
 row has three actions:
@@ -303,7 +317,7 @@ row has three actions:
 - **Open** loads them at the bar, as though their card had just been scanned.
 - **Drinks** opens their history — every order, every night, with each drink
   removable (see below).
-- **Edit** adds or corrects first name, last name, DoD ID, date of birth and
+- **Edit** adds or corrects first name, last name, customer ID, date of birth and
   notes. Setting a date of birth switches the age check on for that person.
 - **Delete** removes them, after a manager PIN.
 
@@ -510,7 +524,7 @@ the warning entirely means buying a code-signing certificate.
 ```bash
 npm install          # rebuilds the native SQLite module for Electron
 npm start            # run the app
-npm test             # 439 main-process checks: limits, caps, rollover, lookup, sales
+npm test             # 457 main-process checks: limits, caps, rollover, lookup, sales
 npm run test:ui      # 152 checks driving the real window, incl. a real PDF render
 npm run dist:win     # build the Windows x64 installer + portable exe
                      # (--publish never: releases are published by CI, not by

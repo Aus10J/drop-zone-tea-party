@@ -232,10 +232,12 @@ function registerIpc() {
   handle('patron:list', ({ search, limit }) => db.listPatrons({ search, limit }));
   handle('patron:history', ({ id, limit }) => db.patronHistory(id, limit));
   handle('patron:find', ({ term, limit }) => db.findPatrons(term, limit));
-  handle('patron:create', ({ name, firstName, lastName, dodId }) => {
-    const { patron, isNew } = db.createPatron({ name, firstName, lastName, dodId });
+  handle('patron:create', ({ name, firstName, lastName, dodId, cardRaw }) => {
+    const cardParsed = cardRaw ? cac.parseScan(cardRaw) : null;
+    const { patron, isNew } = db.createPatron({ name, firstName, lastName, dodId, cardParsed });
     return { isNew, status: db.patronStatus(patron.id) };
   });
+  handle('patron:linkCard', ({ id, raw }) => db.linkCard(id, cac.parseScan(raw)));
   handle('patron:footprint', ({ id }) => db.patronFootprint(id));
   handle('patron:delete', ({ id, pin }) => {
     if (db.getSetting('require_pin_for_admin') === '1' && !db.verifyPin(pin)) {

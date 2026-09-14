@@ -136,7 +136,7 @@ app.whenReady().then(async () => {
     check('adding with no name at all works',
       await waitFor(win, '!document.querySelector("#patronCard").classList.contains("hidden")', 'panel'));
     eq('labelled by the stored DoD ID',
-      await js(win, 'document.querySelector("#pName").textContent'), 'DoD 7654321098');
+      await js(win, 'document.querySelector("#pName").textContent'), 'ID 7654321098');
     eq('and is already counting', await js(win, 'document.querySelector("#pCount").textContent'), '0 / 4');
     check('the identifier is on the record', await js(win, `(async () => {
       const r = await window.api.patron.list({ search: '7654321098' });
@@ -165,7 +165,7 @@ app.whenReady().then(async () => {
       document.querySelector('#manualScanBtn').click();
     })()`);
     check('a partial ID loads the existing patron', await waitFor(win,
-      'document.querySelector("#pName") && document.querySelector("#pName").textContent === "DoD 7654321098"',
+      'document.querySelector("#pName") && document.querySelector("#pName").textContent === "ID 7654321098"',
       'partial lookup'));
     eq('no new patron was created',
       await js(win, '(async () => (await window.api.patron.list({ limit: 500 })).data.length)()'),
@@ -180,7 +180,7 @@ app.whenReady().then(async () => {
       document.querySelector('#manualScanBtn').click();
     })()`);
     check('the last four loads them too', await waitFor(win,
-      'document.querySelector("#pName") && document.querySelector("#pName").textContent === "DoD 7654321098"',
+      'document.querySelector("#pName") && document.querySelector("#pName").textContent === "ID 7654321098"',
       'last four lookup'));
 
     // A term matching nobody offers to add them rather than creating silently.
