@@ -47,6 +47,23 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # Written to a file rather than passed inline: indented continuation
+      # lines in a YAML block would reach Markdown with leading spaces and
+      # render as code blocks.
+      - name: Write release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          cat > RELEASE_NOTES.md <<'NOTES'
+          Download **Drop Zone Tea Party Setup … .exe** and run it on the bar machine.
+
+          Installs per-user, so it does not need admin rights. If installers are blocked on that machine, use the **portable** build instead — it runs from a folder or a USB stick and installs nothing.
+
+          Windows shows a blue "Windows protected your PC" warning because these builds are not code-signed. Click **More info → Run anyway**.
+
+          **Upgrading keeps your data.** The database lives in `%APPDATA%\Drop Zone Tea Party\data\bar.db`, outside the install folder, and is migrated automatically on first launch.
+          NOTES
+
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -55,15 +72,4 @@ jobs:
         run: |
           gh release create "${GITHUB_REF_NAME}" dist/*.exe \
             --title "Drop Zone Tea Party ${GITHUB_REF_NAME}" \
-            --notes "Download **Drop Zone Tea Party Setup*.exe** and run it on the bar machine.
-
-          Installs per-user, so it does not need admin rights. If installers are
-          blocked on that machine, use the **portable** build instead — it runs
-          from a folder or a USB stick and installs nothing.
-
-          Windows will show a blue \"Windows protected your PC\" warning because
-          these builds are not code-signed. Click **More info → Run anyway**.
-
-          Upgrading keeps your data: the database lives in
-          \`%APPDATA%\\Drop Zone Tea Party\\data\\bar.db\`, outside the install
-          folder, and the app migrates it on first launch."
+            --notes-file RELEASE_NOTES.md
