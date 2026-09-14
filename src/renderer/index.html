@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self';" />
+  <title>Drop Zone Tea Party</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header id="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span>
+      <strong id="venueName">Drop Zone Tea Party</strong>
+      <small id="topMeta">loading…</small>
+    </span>
+  </div>
+
+  <nav id="nav">
+    <button class="navbtn active" data-view="bar">Bar</button>
+    <button class="navbtn" data-view="inventory">Inventory</button>
+    <button class="navbtn" data-view="patrons">Patrons</button>
+    <button class="navbtn" data-view="reports">Reports</button>
+    <button class="navbtn" data-view="admin">Admin</button>
+  </nav>
+
+  <div class="topright">
+    <button id="lowStockPill" class="pill warn hidden" title="Items at or below par level"></button>
+    <span id="shiftPill" class="pill"></span>
+    <button id="shiftBtn" class="btn small ghost">Open Shift</button>
+  </div>
+</header>
+
+<!-- =============================== BAR =============================== -->
+<main id="view-bar" class="view active">
+
+  <!-- Patron / scan panel -->
+  <section class="panel patron-panel">
+    <div id="scanIdle" class="scan-idle">
+      <div class="scan-icon"></div>
+      <h2>Scan or search</h2>
+      <p>Hold the card under the scanner, or type a name or DoD ID below.</p>
+      <div class="manual">
+        <input id="manualScan" type="text" placeholder="last name or DoD ID"
+               autocomplete="off" spellcheck="false" />
+        <button id="manualScanBtn" class="btn">Look Up</button>
+      </div>
+      <p class="hint" style="margin-top:4px">
+        Every sale is tied to a patron. If nobody matches, you will be offered
+        the chance to add them.
+      </p>
+    </div>
+
+    <div id="patronCard" class="patron-card hidden">
+      <div class="patron-head">
+        <div>
+          <h2 id="pName">—</h2>
+          <div class="patron-sub">
+            <span id="pLast4" class="mono"></span>
+            <span id="pVisits"></span>
+          </div>
+        </div>
+        <button id="clearPatron" class="btn small ghost" title="Clear (Esc)">Clear</button>
+      </div>
+
+      <div id="pFlags" class="flags"></div>
+
+      <div class="meter-block">
+        <div class="meter-top">
+          <span>Drinks tonight</span>
+          <strong id="pCount">0 / 4</strong>
+        </div>
+        <div id="pPips" class="pips"></div>
+        <div id="pGroups" class="group-meters"></div>
+        <div id="pProjected" class="meter-note"></div>
+      </div>
+
+      <dl class="kv">
+        <dt>Age</dt><dd id="pAge">—</dd>
+        <dt>Spent tonight</dt><dd id="pSpend">$0.00</dd>
+        <dt>Visits</dt><dd id="pLifetime">—</dd>
+        <dt>First seen</dt><dd id="pFirstSeen">—</dd>
+      </dl>
+
+      <div class="patron-actions">
+        <button id="editPatronBtn" class="btn small ghost">Edit details</button>
+        <button id="banPatronBtn" class="btn small danger-ghost">Flag / Bar</button>
+        <button id="historyBtn" class="btn small ghost">History</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Product grid -->
+  <section class="panel menu-panel">
+    <div id="catTabs" class="cat-tabs"></div>
+    <div id="productGrid" class="product-grid"></div>
+  </section>
+
+  <!-- Ticket -->
+  <section class="panel ticket-panel">
+    <h3 class="panel-title">Current Ticket</h3>
+    <div id="ticketLines" class="ticket-lines">
+      <p class="empty">Tap a drink to start a ticket.</p>
+    </div>
+
+    <div id="ticketWarn" class="ticket-warn hidden"></div>
+
+    <div class="ticket-totals">
+      <div class="row"><span>Drinks</span><strong id="tDrinks">0</strong></div>
+      <div class="row total"><span>Total</span><strong id="tTotal">$0.00</strong></div>
+    </div>
+
+    <div class="ticket-buttons">
+      <button id="clearTicket" class="btn ghost">Clear</button>
+      <button id="completeSale" class="btn primary big" disabled>Complete Sale</button>
+    </div>
+
+    <h3 class="panel-title mt">Recent</h3>
+    <div id="recentList" class="recent-list"></div>
+  </section>
+</main>
+
+<!-- ============================ INVENTORY ============================ -->
+<main id="view-inventory" class="view">
+  <section class="panel wide">
+    <div class="panel-head">
+      <h3 class="panel-title">Inventory &amp; Menu</h3>
+      <div class="panel-head-actions">
+        <label class="chk"><input type="checkbox" id="invShowInactive" /> Show archived</label>
+        <input id="invSearch" class="input" type="text" placeholder="Filter…" />
+        <button id="bulkPriceBtn" class="btn small">Re-price a Category</button>
+        <button id="newProductBtn" class="btn primary small">+ New Item</button>
+      </div>
+    </div>
+    <p class="hint">
+      <em>Prices are editable right in the table</em> — click a price, type the new
+      one, press Enter. Same for stock counts, which save as a recount. Use
+      <em>+/−</em> for deliveries and spills. Every price and stock change is
+      logged with who made it and what it was before.
+    </p>
+    <div class="table-wrap">
+      <table class="grid" id="invTable">
+        <thead>
+          <tr>
+            <th>Item</th><th>Category</th><th class="num">ABV</th><th class="num">Serving</th>
+            <th class="num">Std drinks</th><th class="num">Price</th>
+            <th class="num">On hand</th><th>Unit</th><th class="num">Par</th>
+            <th class="num">Adjust</th><th>Counted</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel wide">
+    <h3 class="panel-title">Adjustment Log</h3>
+    <div class="table-wrap short">
+      <table class="grid" id="adjTable">
+        <thead><tr><th>When</th><th>Item</th><th class="num">Change</th><th class="num">New qty</th><th>Reason</th><th>By</th><th>Note</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- ============================= PATRONS ============================= -->
+<main id="view-patrons" class="view">
+  <section class="panel wide">
+    <div class="panel-head">
+      <h3 class="panel-title">Patrons</h3>
+      <div class="panel-head-actions">
+        <input id="patronSearch" class="input" type="text" placeholder="Search name, DoD ID or notes…" />
+      </div>
+    </div>
+    <p class="hint">
+      Records are created automatically the first time a card is scanned —
+      nothing is typed at the bar. <em>Edit</em> adds or corrects a name, date of
+      birth and notes. <em>Delete</em> removes the person but keeps their sales,
+      so the night's takings still add up.
+    </p>
+    <div class="table-wrap">
+      <table class="grid" id="patronTable">
+        <thead><tr><th>Patron</th><th>DoD ID</th><th class="num">Tonight</th><th>Status</th><th>Last seen</th><th>First seen</th><th>Notes</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- ============================= REPORTS ============================= -->
+<main id="view-reports" class="view">
+
+  <!-- One filter row, scoping every number, chart and export below it. -->
+  <section class="panel wide">
+    <div class="filter-row">
+      <div class="quick-ranges" id="quickRanges">
+        <button class="rangebtn" data-range="today">Tonight</button>
+        <button class="rangebtn" data-range="7">Last 7</button>
+        <button class="rangebtn" data-range="30">Last 30</button>
+        <button class="rangebtn" data-range="month">This month</button>
+      </div>
+      <label class="lbl">From <input id="expFrom" class="input" type="date" /></label>
+      <label class="lbl">To <input id="expTo" class="input" type="date" /></label>
+      <span class="grow"></span>
+      <button id="repPdf" class="btn primary">Generate PDF Report</button>
+    </div>
+    <p class="hint" id="repRangeNote"></p>
+  </section>
+
+  <section class="panel wide">
+    <h3 class="panel-title">Sales</h3>
+    <div id="repCards" class="stat-row"></div>
+
+    <div class="chart-head">
+      <h4 id="chartTitle">Takings per night</h4>
+      <div class="seg" id="chartToggle">
+        <button class="segbtn active" data-mode="chart">Chart</button>
+        <button class="segbtn" data-mode="table">Table</button>
+      </div>
+    </div>
+
+    <div id="chartWrap" class="chart-wrap">
+      <div id="salesChart" class="chart-plot"></div>
+      <div id="chartTip" class="chart-tip hidden" role="status"></div>
+    </div>
+
+    <div id="salesTableWrap" class="table-wrap short hidden">
+      <table class="grid" id="salesTable">
+        <thead><tr>
+          <th>Night</th><th class="num">Orders</th><th class="num">Patrons</th>
+          <th class="num">Drinks</th><th class="num">Gross</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel wide">
+    <h3 class="panel-title">Breakdown</h3>
+    <div class="two-col">
+      <div>
+        <h4>By category</h4>
+        <div class="table-wrap short"><table class="grid" id="repCat"><thead><tr><th>Category</th><th class="num">Units</th><th class="num">Sales</th></tr></thead><tbody></tbody></table></div>
+        <h4>Busiest hours</h4>
+        <div class="table-wrap short"><table class="grid" id="repHour"><thead><tr><th>Hour</th><th class="num">Orders</th><th class="num">Std drinks</th><th class="num">Sales</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div>
+        <h4>Top sellers</h4>
+        <div class="table-wrap short"><table class="grid" id="repTop"><thead><tr><th>Item</th><th class="num">Units</th><th class="num">Sales</th></tr></thead><tbody></tbody></table></div>
+        <h4>Highest consumption</h4>
+        <div class="table-wrap short"><table class="grid" id="repHeavy"><thead><tr><th>Patron</th><th class="num">Std drinks</th><th class="num">Orders</th><th class="num">Spend</th></tr></thead><tbody></tbody></table></div>
+        <h4>Limit overrides</h4>
+        <div class="table-wrap short"><table class="grid" id="repOver"><thead><tr><th>Night</th><th>Patron</th><th>Reason</th><th>By</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel wide" id="exportPanel">
+    <h3 class="panel-title">Export</h3>
+    <p class="hint">
+      Uses the date range set at the top of this page. Everything runs offline —
+      export writes to a folder or drive you pick, and nothing leaves this machine
+      on its own.
+    </p>
+    <div class="export-controls">
+      <button id="expBundle" class="btn primary">Export Everything (CSV + database)</button>
+      <button id="expDb" class="btn">Database Backup (.db)</button>
+      <button id="expReveal" class="btn ghost">Open Data Folder</button>
+    </div>
+    <div class="export-single">
+      <label class="lbl">Single report
+        <select id="expReport" class="input"></select>
+      </label>
+      <button id="expCsvBtn" class="btn small">Save CSV</button>
+      <button id="expPreviewBtn" class="btn small ghost">Preview</button>
+    </div>
+    <div id="expResult" class="notice hidden"></div>
+    <div class="table-wrap short hidden" id="expPreviewWrap">
+      <table class="grid" id="expPreview"><thead></thead><tbody></tbody></table>
+    </div>
+  </section>
+</main>
+
+<!-- ============================ SETTINGS ============================= -->
+<main id="view-admin" class="view">
+
+  <!-- Everything below is sealed until a manager PIN is entered. -->
+  <section class="panel wide" id="adminLock">
+    <div class="lock-screen">
+      <h2>Admin is locked</h2>
+      <p>
+        Drink limits, pricing and privacy controls live in here. Enter the
+        manager PIN to unlock it for this session.
+      </p>
+      <div class="lock-form">
+        <input id="adminPin" class="input mono" type="password" inputmode="numeric"
+               placeholder="••••" autocomplete="off" />
+        <button id="adminUnlock" class="btn primary">Unlock</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="adminBody" class="hidden">
+
+  <section class="panel wide accent">
+    <h3 class="panel-title">Sales Limits</h3>
+    <div class="limit-hero">
+      <div class="limit-dial">
+        <div class="limit-num" id="limitNum">3</div>
+        <div class="limit-cap">drinks per CAC<br />per night</div>
+        <div class="limit-stepper">
+          <button class="btn ghost" id="limitDown" title="Lower the limit">−</button>
+          <input id="setLimit" class="input" type="number" min="0" step="0.5" />
+          <button class="btn ghost" id="limitUp" title="Raise the limit">+</button>
+        </div>
+      </div>
+      <div class="limit-copy">
+        <p>
+          Every scanned CAC carries its own running count for the night. When a
+          patron reaches this number the sale stops, and a manager has to
+          override it with a PIN and a written reason that gets recorded against
+          the order.
+        </p>
+        <p class="hint">
+          Counted in <em>drinks served</em> — one pour is one drink whether it is
+          a 4.6% lager or a 7% IPA.
+        </p>
+
+        <h4>Category caps</h4>
+        <p class="hint">
+          Each category has its own cap underneath the night total, and whichever
+          runs out first wins. With a total of 4 and liquor at 3, a patron can
+          have four beers, or three liquors and a beer — but never a fourth
+          liquor. Cocktails count against the liquor cap.
+        </p>
+        <div class="sub-limits">
+          <label class="lbl">Beer <input id="setLimitBeer" class="input" type="number" min="0" step="1" /></label>
+          <label class="lbl">Wine <input id="setLimitWine" class="input" type="number" min="0" step="1" /></label>
+          <label class="lbl">Liquor <input id="setLimitLiquor" class="input" type="number" min="0" step="1" /></label>
+        </div>
+        <p class="hint" id="limitExplain"></p>
+
+        <div class="form">
+          <label class="lbl">When a patron reaches the limit
+            <select id="setLimitMode" class="input">
+              <option value="block">Stop the sale — manager PIN required to override</option>
+              <option value="warn">Warn the bartender but allow the sale</option>
+              <option value="track">Track silently, never warn</option>
+            </select>
+          </label>
+          <label class="lbl">The night rolls over at
+            <select id="setRollover" class="input"></select>
+          </label>
+          <label class="lbl">Minimum age to be served alcohol
+            <input id="setMinAge" class="input" type="number" min="0" />
+          </label>
+        </div>
+        <div class="row-actions">
+          <button id="saveLimits" class="btn primary">Save Limits</button>
+          <span id="limitSaved" class="saved-flash hidden">Saved</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel wide">
+    <h3 class="panel-title">Pricing</h3>
+    <p class="hint">
+      Individual prices are editable directly in the Inventory table — click the
+      price, type, press Enter. Use this to move a whole category at once.
+    </p>
+    <div class="row-actions">
+      <button id="bulkPriceBtn2" class="btn primary small">Re-price a Category</button>
+      <button id="goInventory" class="btn small ghost">Open Inventory</button>
+    </div>
+    <div id="priceSummary" class="stat-row"></div>
+  </section>
+
+  <section class="panel">
+    <h3 class="panel-title">Venue &amp; Service</h3>
+    <div class="form">
+      <label class="lbl">Venue name <input id="setVenue" class="input" type="text" /></label>
+      <label class="lbl">Bartender on duty <input id="setBartender" class="input" type="text" /></label>
+      <label class="chk"><input type="checkbox" id="setBlockStock" /> Block sales when stock hits zero</label>
+      <label class="chk"><input type="checkbox" id="setPinOverride" /> Require manager PIN for limit overrides</label>
+      <label class="chk"><input type="checkbox" id="setPinVoid" /> Require manager PIN for voids and shift close</label>
+      <label class="chk"><input type="checkbox" id="setPinAdmin" /> Require manager PIN to open Admin</label>
+      <button id="saveSettings" class="btn primary">Save Rules</button>
+      <span id="setSaved" class="saved-flash hidden">Saved</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3 class="panel-title">Privacy &amp; Records</h3>
+    <div class="form">
+      <label class="chk"><input type="checkbox" id="setStoreNames" /> Store patron names</label>
+      <p class="hint">
+        Off means the app keeps only the card hash and drink counts — no names at
+        all. Drink limits still work; the bartender just sees an ID, not a name.
+      </p>
+      <label class="lbl">Clear names &amp; DOB for patrons not seen in
+        <input id="setRetention" class="input" type="number" min="0" /> days (0 = keep)
+      </label>
+      <button id="saveSettings2" class="btn primary">Save Privacy Settings</button>
+      <hr />
+      <h4>Manager PIN</h4>
+      <div id="pinDefaultWarn" class="notice warn hidden">
+        The manager PIN is still the default <strong>1234</strong>. Change it before opening.
+      </div>
+      <div class="pin-form">
+        <input id="pinCurrent" class="input" type="password" inputmode="numeric" placeholder="Current PIN" />
+        <input id="pinNew" class="input" type="password" inputmode="numeric" placeholder="New PIN (4-8 digits)" />
+        <button id="savePin" class="btn">Change PIN</button>
+      </div>
+      <hr />
+      <h4>Maintenance</h4>
+      <div class="row-actions">
+        <button id="purgeNow" class="btn small ghost">Run retention purge now</button>
+        <button id="revealData2" class="btn small ghost">Open data folder</button>
+      </div>
+      <p class="hint mono" id="dbPathHint"></p>
+    </div>
+  </section>
+
+  <section class="panel wide">
+    <h3 class="panel-title">Card Layout Calibration</h3>
+    <p class="hint">
+      Optional. Drink tracking already works without this — identity comes from a
+      hash of the whole scan. Calibrate only if you want names and dates of birth
+      to fill in automatically instead of typing them once per new patron.
+      <strong>Scan a card you own</strong>, then set the start position and length
+      of each field until the preview reads correctly.
+    </p>
+    <div class="form">
+      <label class="lbl">Raw scan
+        <input id="calRaw" class="input mono" type="text" placeholder="Scan a card with this box focused" autocomplete="off" />
+      </label>
+      <div id="calStrip" class="cal-strip"></div>
+      <table class="grid cal-table">
+        <thead><tr><th>Field</th><th class="num">Start</th><th class="num">Length</th><th>Encoding</th><th>Preview</th></tr></thead>
+        <tbody>
+          <tr data-field="name">
+            <th>Name</th>
+            <td><input class="input tiny cal-start" type="number" min="0" /></td>
+            <td><input class="input tiny cal-len" type="number" min="0" /></td>
+            <td><select class="input cal-enc">
+              <option value="ascii">Text</option>
+              <option value="base32-int">Base32 number</option>
+              <option value="int">Digits</option>
+            </select></td>
+            <td class="cal-out mono">—</td>
+          </tr>
+          <tr data-field="edipi">
+            <th>DoD ID</th>
+            <td><input class="input tiny cal-start" type="number" min="0" /></td>
+            <td><input class="input tiny cal-len" type="number" min="0" /></td>
+            <td><select class="input cal-enc">
+              <option value="base32-int">Base32 number</option>
+              <option value="int">Digits</option>
+              <option value="ascii">Text</option>
+            </select></td>
+            <td class="cal-out mono">—</td>
+          </tr>
+          <tr data-field="dob">
+            <th>Date of birth</th>
+            <td><input class="input tiny cal-start" type="number" min="0" /></td>
+            <td><input class="input tiny cal-len" type="number" min="0" /></td>
+            <td><select class="input cal-enc">
+              <option value="base32-jdn">Base32 Julian day</option>
+              <option value="yyyymmdd">YYYYMMDD</option>
+            </select></td>
+            <td class="cal-out mono">—</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="row-actions">
+        <button id="calSave" class="btn primary small">Save Layout</button>
+        <button id="calClear" class="btn small danger-ghost">Clear Layout</button>
+        <span id="calStatus" class="hint"></span>
+      </div>
+    </div>
+  </section>
+
+  </div><!-- /adminBody -->
+</main>
+
+<!-- ============================== MODALS ============================= -->
+<div id="modalRoot" class="modal-root hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3 id="modalTitle">Title</h3>
+    <div id="modalBody"></div>
+    <div id="modalActions" class="modal-actions"></div>
+  </div>
+</div>
+
+<div id="toastRoot" class="toast-root"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

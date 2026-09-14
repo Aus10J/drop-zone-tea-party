@@ -1,0 +1,42 @@
+appId: mil.dropzone.teaparty
+productName: Drop Zone Tea Party
+copyright: Drop Zone Tea Party
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - src/**/*
+  - package.json
+  - "!**/*.map"
+
+# better-sqlite3 is a native module; it must stay unpacked so the .node binary
+# is loadable from disk rather than from inside the asar archive.
+asar: true
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+
+win:
+  target:
+    # nsis  = normal per-user installer (no admin rights needed)
+    # portable = single self-contained .exe, installs nothing (for locked-down machines)
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Drop Zone Tea Party
+
+portable:
+  artifactName: DropZoneTeaParty-portable-${version}.exe
+
+mac:
+  target: dmg
+  category: public.app-category.business

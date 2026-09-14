@@ -1,0 +1,30 @@
+{
+  "name": "drop-zone-tea-party",
+  "productName": "Drop Zone Tea Party",
+  "version": "1.0.0",
+  "description": "Offline point-of-sale, CAC drink tracking, and inventory for the Drop Zone Tea Party bar",
+  "main": "src/main/main.js",
+  "author": "Drop Zone Tea Party",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "prestart": "node scripts/preflight.js",
+    "start": "electron .",
+    "pretest": "node scripts/preflight.js",
+    "test": "electron test/smoke.js",
+    "test:ui": "electron test/ui-smoke.js",
+    "fix:native": "electron-builder install-app-deps",
+    "postinstall": "electron-builder install-app-deps",
+    "dist:win": "electron-builder --win --x64",
+    "dist:mac": "electron-builder --mac",
+    "shot": "electron scripts/screenshot.js",
+    "pretest:ui": "node scripts/preflight.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "12.11.1"
+  },
+  "devDependencies": {
+    "electron": "42.11.3",
+    "electron-builder": "^26.0.0"
+  }
+}

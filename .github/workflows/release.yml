@@ -1,0 +1,69 @@
+name: Build Windows installers
+
+# Two ways in:
+#   - push a tag like v1.0.1  -> builds and publishes a GitHub Release
+#   - "Run workflow" button   -> builds and leaves the installers as artifacts
+#
+# Building on a Windows runner rather than cross-compiling from macOS means the
+# native SQLite module is compiled for the machine it will actually run on.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write          # needed to create the Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The main-process suite is deterministic and has no timing dependence,
+      # so it is the release gate. The UI suite drives a real window and is
+      # better run locally (npm run test:ui) than on a shared CI machine.
+      - name: Run tests
+        run: npm test
+
+      - name: Build installers
+        run: npm run dist:win
+
+      - name: Upload installers as build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers
+          path: |
+            dist/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/*.exe \
+            --title "Drop Zone Tea Party ${GITHUB_REF_NAME}" \
+            --notes "Download **Drop Zone Tea Party Setup*.exe** and run it on the bar machine.
+
+          Installs per-user, so it does not need admin rights. If installers are
+          blocked on that machine, use the **portable** build instead — it runs
+          from a folder or a USB stick and installs nothing.
+
+          Windows will show a blue \"Windows protected your PC\" warning because
+          these builds are not code-signed. Click **More info → Run anyway**.
+
+          Upgrading keeps your data: the database lives in
+          \`%APPDATA%\\Drop Zone Tea Party\\data\\bar.db\`, outside the install
+          folder, and the app migrates it on first launch."
