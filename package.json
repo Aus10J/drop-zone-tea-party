@@ -1,7 +1,7 @@
 {
   "name": "drop-zone-tea-party",
   "productName": "Drop Zone Tea Party",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Offline point-of-sale, CAC drink tracking, and inventory for the Drop Zone Tea Party bar",
   "main": "src/main/main.js",
   "author": "Drop Zone Tea Party",
