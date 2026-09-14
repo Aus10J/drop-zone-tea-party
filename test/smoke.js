@@ -159,6 +159,49 @@ function main() {
   check('layout cleared', cac.getLayout() === null);
 
   /* ---------------------------------------------------------------- */
+  section('Finding a DoD ID inside a scan');
+  // Pack a known ID the way a card does — base32, not readable digits — and
+  // check it can be located without anyone counting characters.
+  const B32 = '0123456789ABCDEFGHIJKLMNOPQRSTUV';
+  const toBase32 = (n, width) => {
+    let out = '';
+    let v = n;
+    while (v > 0) { out = B32[v % 32] + out; v = Math.floor(v / 32); }
+    return out.padStart(width, '0');
+  };
+
+  const realId = '1234567890';
+  const packed = toBase32(Number(realId), 7);
+  const cardPayload = `N1AB3CD${packed}MURPHY SEAN T     ZZ9XX8CC7VV6`;
+
+  const hits = cac.deduceIdLayout(cardPayload, realId);
+  check('the packed ID is located', hits.length >= 1, JSON.stringify(hits.slice(0, 3)));
+  eq('at the right offset', hits[0].start, cardPayload.indexOf(packed));
+  eq('with the right width', hits[0].len, packed.length);
+  eq('and the right encoding', hits[0].encoding, 'base32-int');
+
+  // Feed the discovered offsets back in and confirm they decode.
+  cac.saveLayout({ version: 1, fields: { edipi: {
+    start: hits[0].start, len: hits[0].len, encoding: hits[0].encoding,
+  } } });
+  const decoded = cac.parseScan(cardPayload);
+  eq('so a scan now yields the DoD ID', decoded.edipi, realId);
+  eq('parsed via the saved layout', decoded.parsedBy, 'layout');
+  eq('and the last four come with it', decoded.last4, '7890');
+  cac.saveLayout(null);
+
+  // Plain digits, if a card generation ever stores them that way.
+  const plain = cac.deduceIdLayout('XXXX1234567890YYYY', realId);
+  eq('readable digits are found too', plain[0].encoding, 'int');
+  eq('at their offset', plain[0].start, 4);
+
+  eq('a wrong ID finds nothing', cac.deduceIdLayout(cardPayload, '9999999999').length, 0);
+  eq('no ID finds nothing', cac.deduceIdLayout(cardPayload, '').length, 0);
+  eq('no scan finds nothing', cac.deduceIdLayout('', realId).length, 0);
+  check('dashes in the typed ID are tolerated',
+    cac.deduceIdLayout(cardPayload, '123-456-7890').length >= 1);
+
+  /* ---------------------------------------------------------------- */
   section('Patron identity');
   const rawCard = 'N1AB3CD4EF5DOE JOHN A       GH6IJ7KL8MN9OP0QR1ST2UV3';
   const first = db.resolveCard(cac.parseScan(rawCard));

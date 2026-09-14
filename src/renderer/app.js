@@ -511,6 +511,10 @@ async function handleScan(raw) {
   const data = await tryReq(window.api.scan.resolve, { raw });
   if (!data) return;
 
+  // A card can be scanned from anywhere. Bring the bar up, or the patron
+  // loads onto a screen nobody is looking at.
+  if (state.view !== 'bar') setView('bar');
+
   state.patron = data.status;
   state.scanInfo = { isNew: data.isNew, ...data.parsed };
   renderPatronPanel();
@@ -2578,6 +2582,50 @@ function wireCalibration() {
       $(sel, row).addEventListener('change', updateCalibration);
     }
   }
+
+  // Auto-detect: find a known DoD ID inside a scanned payload and fill the
+  // offsets in, rather than making anyone count characters.
+  $('#calDetect').addEventListener('click', async () => {
+    const raw = $('#calRaw').value.trim();
+    const knownId = $('#calKnownId').value.trim();
+    const box = $('#calDetectResult');
+    box.classList.remove('hidden');
+
+    if (!raw) { box.className = 'notice warn'; box.textContent = 'Scan a card into the box above first.'; return; }
+    if (!/^\d{9,10}$/.test(knownId.replace(/\D/g, ''))) {
+      box.className = 'notice warn';
+      box.textContent = 'Enter the full DoD ID from the front of that same card (9 or 10 digits).';
+      return;
+    }
+
+    const res = await tryReq(window.api.layout.deduce, { raw, knownId });
+    if (!res) return;
+    const hits = res.candidates || [];
+
+    if (!hits.length) {
+      box.className = 'notice warn';
+      box.textContent = 'That ID is not in this scan in any form we recognise. '
+        + 'Check the ID matches the card you scanned. If it does, this card '
+        + 'generation packs the ID differently — scanning still works and drink '
+        + 'tracking is unaffected, you just will not see the ID on screen.';
+      return;
+    }
+
+    const best = hits[0];
+    const row = calRow('edipi');
+    $('.cal-start', row).value = String(best.start);
+    $('.cal-len', row).value = String(best.len);
+    $('.cal-enc', row).value = best.encoding;
+    await updateCalibration();
+
+    box.className = 'notice ok';
+    box.textContent = `Found it at character ${best.start}, ${best.len} long `
+      + `(${best.encoding === 'int' ? 'plain digits' : 'base32'}).`
+      + (hits.length > 1
+        ? ` ${hits.length - 1} other spot${hits.length === 2 ? '' : 's'} also matched — `
+          + 'try a second card to be certain, then Save Layout.'
+        : ' Press Save Layout to keep it.');
+  });
 
   $('#calSave').addEventListener('click', async () => {
     const fields = {};

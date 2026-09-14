@@ -463,6 +463,21 @@
       <label class="lbl">Raw scan
         <input id="calRaw" class="input mono" type="text" placeholder="Scan a card with this box focused" autocomplete="off" />
       </label>
+
+      <div class="auto-cal">
+        <h4 style="margin-top:0">Find the DoD ID for me</h4>
+        <p class="hint">
+          The barcode does not carry the ID as readable text, which is why a raw
+          scan looks like nonsense. Scan <em>your own</em> card above, type your
+          own DoD ID here, and the app will work out where it is hidden.
+        </p>
+        <div class="row-actions">
+          <input id="calKnownId" class="input mono" type="text" inputmode="numeric"
+                 maxlength="10" placeholder="your 10-digit DoD ID" autocomplete="off" />
+          <button id="calDetect" class="btn primary small">Find It</button>
+        </div>
+        <div id="calDetectResult" class="notice hidden"></div>
+      </div>
       <div id="calStrip" class="cal-strip"></div>
       <table class="grid cal-table">
         <thead><tr><th>Field</th><th class="num">Start</th><th class="num">Length</th><th>Encoding</th><th>Preview</th></tr></thead>

@@ -565,3 +565,11 @@ table.grid td .input { height: 30px; }
 /* Recent header, with the undo button alongside. */
 .recent-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .recent-head .panel-title { margin-bottom: 0; }
+
+/* Guided DoD ID detection inside the card-layout tool. */
+.auto-cal {
+  border: 1px solid var(--af-blue-lift); border-radius: 9px;
+  padding: 14px 16px; background: rgba(0,48,143,.14);
+}
+.auto-cal .row-actions { margin-top: 4px; }
+.auto-cal .input { width: 220px; }

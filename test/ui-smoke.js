@@ -673,6 +673,74 @@ app.whenReady().then(async () => {
           { year: 'numeric', month: 'short', day: 'numeric' }));
     }
 
+    console.log('\nBarcode scanner (keyboard wedge)');
+    {
+      // A wedge scanner is just a keyboard that types very fast and presses
+      // Enter. These dispatch the same events one would.
+      const CARD = 'N7QQ2WW3EE4MURPHY SEAN T     ZZ1XX2CC3VV4BB5NN6MM7';
+      const wedge = (text) => `(() => {
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        const fire = (k) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+        for (const ch of ${JSON.stringify(text)}) fire(ch);
+        fire('Enter');
+      })()`;
+
+      await js(win, 'document.querySelector(\'.navbtn[data-view="bar"]\').click()');
+      await sleep(300);
+      await js(win, 'if (document.querySelector("#clearPatron")) document.querySelector("#clearPatron").click()');
+      await sleep(300);
+
+      // 1. Nothing focused — the global capture should pick it up.
+      await js(win, wedge(CARD));
+      check('a scan with nothing focused loads a patron', await waitFor(win,
+        '!document.querySelector("#patronCard").classList.contains("hidden")', 'wedge scan'));
+      const firstLabel = await js(win, 'document.querySelector("#pName").textContent');
+      check('and reads the name off the barcode', /MURPHY|SEAN/i.test(firstLabel), firstLabel);
+
+      // 2. Same card again — must be the same person, not a duplicate.
+      const countAfterFirst = await js(win,
+        '(async () => (await window.api.patron.list({ limit: 500 })).data.length)()');
+      await js(win, 'document.querySelector("#clearPatron").click()');
+      await sleep(300);
+      await js(win, wedge(CARD));
+      await waitFor(win, '!document.querySelector("#patronCard").classList.contains("hidden")', 'rescan');
+      eq('re-scanning the same card creates nobody new',
+        await js(win, '(async () => (await window.api.patron.list({ limit: 500 })).data.length)()'),
+        countAfterFirst);
+      eq('and lands on the same patron',
+        await js(win, 'document.querySelector("#pName").textContent'), firstLabel);
+
+      // 3. Scanned into the focused lookup box — the state the app parks in
+      //    after every sale, so this is the common case in service.
+      await js(win, 'document.querySelector("#clearPatron").click()');
+      await sleep(400);
+      check('the lookup box holds focus between customers',
+        await js(win, 'document.activeElement === document.querySelector("#manualScan")'));
+      await js(win, `(() => {
+        const s = document.querySelector('#manualScan');
+        s.focus();
+        s.value = ${JSON.stringify(CARD)};
+        s.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      })()`);
+      check('a scan typed into the focused box finds the same patron', await waitFor(win,
+        `document.querySelector("#pName") && document.querySelector("#pName").textContent === ${JSON.stringify(firstLabel)}`,
+        'focused scan'));
+      eq('still no duplicate',
+        await js(win, '(async () => (await window.api.patron.list({ limit: 500 })).data.length)()'),
+        countAfterFirst);
+
+      // 4. Scanning while on another screen should bring the bar up.
+      await js(win, 'document.querySelector("#clearPatron").click()');
+      await sleep(200);
+      await js(win, 'document.querySelector(\'.navbtn[data-view="reports"]\').click()');
+      await sleep(500);
+      await js(win, wedge(CARD));
+      check('scanning from another screen jumps back to the bar', await waitFor(win,
+        'document.querySelector("#view-bar").classList.contains("active")', 'view switch'));
+      check('with the patron loaded', await js(win,
+        '!document.querySelector("#patronCard").classList.contains("hidden")'));
+    }
+
     console.log('\nConsole health');
     const inPageErrors = await js(win, 'JSON.stringify(window.__err || [])');
     check('no uncaught errors in the page', inPageErrors === '[]', inPageErrors);

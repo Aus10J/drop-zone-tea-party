@@ -215,6 +215,9 @@ function registerIpc() {
     cac.previewSlice(cac.normalize(raw), Number(start) || 0, Number(len) || 0));
 
   handle('layout:save', ({ layout }) => ({ layout: cac.saveLayout(layout) }));
+  handle('layout:deduce', ({ raw, knownId }) => ({
+    candidates: cac.deduceIdLayout(raw, knownId),
+  }));
   handle('layout:get', () => ({ layout: cac.getLayout() }));
 
   /* --- patrons ---------------------------------------------------- */

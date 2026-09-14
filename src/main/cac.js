@@ -315,8 +315,54 @@ function parseScan(input) {
   return out;
 }
 
+/**
+ * Work out where a known DoD ID is hiding inside a scanned payload.
+ *
+ * The barcode does not carry the ID as readable text — it is packed into
+ * fixed-width fields, which is why a raw scan looks like nonsense. Rather than
+ * making somebody count character offsets by hand, this takes one card and its
+ * owner's ID and searches for any slice that decodes to it.
+ *
+ * Returns every candidate, best first. A match found at the same offset in two
+ * different cards is certain; a single card can occasionally throw up a
+ * coincidence, which is why the caller is encouraged to confirm with a second.
+ */
+function deduceIdLayout(rawInput, knownId) {
+  const raw = normalize(rawInput);
+  const target = String(knownId || '').replace(/\D/g, '');
+  if (!raw || !target) return [];
+
+  const found = [];
+
+  // Plainest case: the digits are simply sitting there.
+  for (let i = raw.indexOf(target); i >= 0; i = raw.indexOf(target, i + 1)) {
+    found.push({ start: i, len: target.length, encoding: 'int', confidence: 'exact' });
+  }
+
+  // Otherwise it is base32-packed. Ten digits fit in 5-8 symbols; scan wider
+  // than that to be safe, since field widths vary by card generation.
+  const wanted = Number(target);
+  if (Number.isSafeInteger(wanted)) {
+    for (let len = 4; len <= 10; len++) {
+      for (let start = 0; start + len <= raw.length; start++) {
+        const slice = raw.slice(start, start + len);
+        if (base32ToInt(slice) !== wanted) continue;
+        found.push({
+          start, len, encoding: 'base32-int',
+          // A slice with no leading zero symbol is the natural encoding;
+          // padded variants are the same number and rank lower.
+          confidence: slice[0] === '0' ? 'padded' : 'exact',
+        });
+      }
+    }
+  }
+
+  const rank = { exact: 0, padded: 1 };
+  return found.sort((a, b) => (rank[a.confidence] - rank[b.confidence]) || (a.len - b.len));
+}
+
 module.exports = {
   init, loadLayout, getLayout, saveLayout,
   parseScan, normalize, classify, previewSlice,
-  base32ToInt, jdnToIso,
+  base32ToInt, jdnToIso, deduceIdLayout,
 };

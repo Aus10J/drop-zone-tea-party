@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('api', {
     get: call('layout:get'),
     save: call('layout:save'),
     preview: call('layout:preview'),
+    deduce: call('layout:deduce'),
   },
 
   patron: {

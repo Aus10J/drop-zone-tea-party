@@ -220,10 +220,28 @@ automatically too; nothing is asked for. A name can be added or corrected later
 from **Edit details** on the Bar screen, and the age check switches on by
 itself once a date of birth is on file.
 
-**Admin → Card Layout Calibration** is optional and only worth doing if you
-want names and dates of birth to populate reliably. Scan a card you own and
-mark which character range holds each field, with a live decoded preview. Two
-minutes, and it then applies to every card of that generation.
+### Why a scan looks like nonsense
+
+A CAC's barcode does **not** carry the DoD ID as readable text. It is a
+fixed-width packed payload, so scanning one produces a jumble of letters and
+digits. That is normal and the app is built for it: identity comes from a hash
+of the whole payload, so scanning works perfectly and the same card always
+finds the same patron. The DoD ID simply is not visible until the app is told
+where in that jumble it sits.
+
+**Admin → Card Layout Calibration → "Find the DoD ID for me"** does that for
+you. Scan your own card into the box, type your own DoD ID, press **Find It**,
+and it searches the payload for any slice that decodes to that ID — plain
+digits or base32 — and fills in the offsets. Press **Save Layout** and every
+card of that generation decodes from then on.
+
+Worth doing with a **second card** before trusting it: a single card can throw
+up a coincidental match, and the tool tells you when more than one spot
+matched. Two cards agreeing on the same offset is conclusive.
+
+Once saved, returning patrons pick up their DoD ID automatically the next time
+they scan — existing records are backfilled, not orphaned. Names and dates of
+birth can be mapped the same way with the manual offset fields.
 
 The reason it works this way rather than hardcoding byte offsets: the DoD
 PDF417 layout is fixed-width but **versioned**, and the offsets differ between
@@ -492,8 +510,8 @@ the warning entirely means buying a code-signing certificate.
 ```bash
 npm install          # rebuilds the native SQLite module for Electron
 npm start            # run the app
-npm test             # 426 main-process checks: limits, caps, rollover, lookup, sales
-npm run test:ui      # 143 checks driving the real window, incl. a real PDF render
+npm test             # 439 main-process checks: limits, caps, rollover, lookup, sales
+npm run test:ui      # 152 checks driving the real window, incl. a real PDF render
 npm run dist:win     # build the Windows x64 installer + portable exe
                      # (--publish never: releases are published by CI, not by
                      #  electron-builder, which otherwise tries to publish by
