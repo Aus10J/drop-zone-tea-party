@@ -121,12 +121,38 @@ function openModal({ title, body, actions = [], onOpen, dismissable = true }) {
   $('#modalRoot').classList.remove('hidden');
   modalOpen = true;
 
+  // Drop any handler from a modal that was replaced without closing first —
+  // otherwise its (possibly dismissable) Escape handler lingers and can close
+  // a later modal that is meant to stay put.
+  if (modalEscHandler) document.removeEventListener('keydown', modalEscHandler, true);
   modalEscHandler = (e) => {
     if (e.key === 'Escape' && dismissable) { e.stopPropagation(); closeModal(); }
   };
   document.addEventListener('keydown', modalEscHandler, true);
 
   if (onOpen) onOpen();
+}
+
+/**
+ * Hard stop shown when a sale could not be recorded against a patron — the one
+ * thing this system exists to prevent. Nothing was sold; the ticket is left as
+ * it was so the administrator can see what was attempted.
+ */
+function showAdminHalt(detail) {
+  openModal({
+    title: '⚠ Sale halted — a drink was not recorded',
+    body: [
+      el('div', { class: 'admin-halt' }, [
+        el('p', { class: 'ah-lead', text: 'Alert the system administrator immediately.' }),
+        el('p', { text: detail || 'A drink on this ticket would not have counted against the patron.' }),
+        el('p', { class: 'ah-note', text:
+          'Nothing was charged and nothing was recorded. Do not keep serving on '
+          + 'this machine until the administrator has checked it.' }),
+      ]),
+    ],
+    actions: [{ label: 'I have noted this', cls: 'danger' }],
+    dismissable: false,
+  });
 }
 
 /** Manager PIN (and optional reason) prompt. Resolves null on cancel. */
@@ -1276,6 +1302,23 @@ function renderTicket() {
     return;
   }
 
+  // Integrity gate. If any line on the ticket would not be counted against the
+  // patron, the sale must not go through at all — this is the exact failure
+  // that once lost track of drinks. Block the button and route it to the
+  // system-administrator alert instead of letting the sale complete.
+  if (q.lines.some((l) => !(l.standardDrinks > 0))) {
+    btn.disabled = false;               // clickable, but it opens the alert
+    btn.dataset.halt = '1';
+    btn.textContent = '⚠ Cannot record — get admin';
+    btn.className = 'btn danger big';
+    warn.classList.remove('hidden');
+    warn.className = 'ticket-warn block';
+    warn.textContent = 'A drink on this ticket would not be recorded against the patron. '
+      + 'Do not sell — alert the system administrator.';
+    return;
+  }
+  delete btn.dataset.halt;
+
   const messages = [];
   if (q.banned) messages.push('Patron is barred.');
   if (q.underage) messages.push(`Patron is under ${state.settings.min_age}.`);
@@ -1310,6 +1353,14 @@ async function completeSale() {
   const q = state.quote;
   if (!q || !q.lines.length) return;
 
+  // The button is in its halt state — a drink on the ticket cannot be recorded.
+  // Do not sell; sound the alarm.
+  if ($('#completeSale').dataset.halt === '1'
+      || q.lines.some((l) => !(l.standardDrinks > 0))) {
+    showAdminHalt('A drink on this ticket would not be recorded against the patron.');
+    return;
+  }
+
   const patronId = state.patron ? state.patron.patron.id : null;
   let overrideReason = null;
   let pin = null;
@@ -1341,7 +1392,10 @@ async function completeSale() {
     pin = got.pin;
   }
 
-  const res = await tryReq(window.api.order.create, {
+  // Called directly rather than through tryReq, so a recording failure can be
+  // told apart from an ordinary refusal (a wrong PIN, a limit) and raised as a
+  // hard administrator alert instead of a passing toast.
+  const raw = await window.api.order.create({
     patronId,
     items: state.ticket.map((t) => ({ productId: t.productId, qty: t.qty })),
     paymentMethod: state.payment,
@@ -1349,7 +1403,25 @@ async function completeSale() {
     overrideReason,
     pin,
   });
-  if (!res) return;
+
+  if (!raw || !raw.ok) {
+    const msg = (raw && raw.error) || 'The sale did not go through.';
+    if (/DRINK_NOT_RECORDED/.test(msg)) {
+      showAdminHalt(msg.replace(/^DRINK_NOT_RECORDED:\s*/, ''));
+    } else {
+      // An ordinary refusal — wrong PIN, etc. Nothing was recorded; let them retry.
+      toast(msg, 'err', 4200);
+    }
+    return;
+  }
+  const res = raw.data;
+
+  // Belt and suspenders: the backend rolls back if the count did not move, so
+  // this should always be true — but if it is ever not, halt loudly.
+  if (res.recorded === false) {
+    showAdminHalt('The sale did not register on the patron’s record.');
+    return;
+  }
 
   const soldTo = state.patron ? state.patron.label : '';
   state.products = res.products;

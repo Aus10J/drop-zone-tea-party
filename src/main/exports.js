@@ -345,6 +345,7 @@ function buildReportHtml(rep, venueName) {
   th { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: #5b646e; }
   td.r, th.r { text-align: right; }
   .none { color: #7b848d; font-size: 10.5px; font-style: italic; }
+  .page-break { break-before: page; }
   .two { display: flex; gap: 22px; }
   .two > div { flex: 1; min-width: 0; }
   .chart { width: 100%; height: auto; margin-top: 6px; }
@@ -399,9 +400,24 @@ function buildReportHtml(rep, venueName) {
   ], ['l', 'r'])}
 
   <h2>Highest consumption</h2>
-  ${table(['Patron', 'Nights', 'Orders', 'Std drinks', 'Spend'],
+  ${table(['Patron', 'Nights', 'Orders', 'Drinks', 'Spend'],
     rep.heavyPatrons.slice(0, 15).map((h) => [h.label, h.nights, h.orders, h.drinks, usd(h.cents)]),
     ['l', 'r', 'r', 'r', 'r'])}
+
+  <h2 class="page-break">All patrons &amp; what they drank</h2>
+  <p class="sub" style="margin:0 0 6px">
+    Every patron served in this period and each drink on their record —
+    ${rep.patronsAll.length} patron${rep.patronsAll.length === 1 ? '' : 's'}.
+  </p>
+  ${table(['Patron', 'Customer ID', 'Drinks', 'What they drank', 'Spend'],
+    rep.patronsAll.map((pt) => [
+      pt.label,
+      pt.dodId || '—',
+      pt.drinks,
+      pt.items.map((i) => `${i.qty}× ${i.name}`).join(', '),
+      usd(pt.cents),
+    ]),
+    ['l', 'l', 'r', 'l', 'r'])}
 
   <h2>Limit overrides &amp; voids</h2>
   <p class="sub" style="margin:0 0 6px">

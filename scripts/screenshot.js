@@ -172,6 +172,15 @@ async function main() {
   fs.writeFileSync(path.join(OUT, 'bar.png'), img.toPNG());
   console.log('wrote .shots/bar.png');
 
+  // The system-administrator halt — shown when a drink could not be recorded.
+  await js(`window.showAdminHalt('A drink on this ticket would not be recorded against the patron.')`);
+  await sleep(500);
+  img = await win.webContents.capturePage();
+  fs.writeFileSync(path.join(OUT, 'admin-halt.png'), img.toPNG());
+  console.log('wrote .shots/admin-halt.png');
+  await js(`Array.from(document.querySelectorAll('#modalActions .btn')).find(b => /noted/i.test(b.textContent)).click()`);
+  await sleep(200);
+
   // The simplified inventory table: beverage, price, on hand.
   await js('document.querySelector(\'.navbtn[data-view="inventory"]\').click()');
   await sleep(700);
@@ -223,6 +232,18 @@ async function main() {
   fs.writeFileSync(path.join(OUT, 'sales-report.pdf'), pdf);
   pdfWin.destroy();
   console.log('wrote .shots/pdf-page1.png and .shots/sales-report.pdf');
+
+  // The "All patrons & what they drank" section (starts on a later page).
+  const pWin = new BrowserWindow({ show: false, width: 850, height: 1400 });
+  await pWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  await sleep(500);
+  await pWin.webContents.executeJavaScript(
+    "document.querySelector('.page-break').scrollIntoView(); true");
+  await sleep(300);
+  const pShot = await pWin.webContents.capturePage();
+  fs.writeFileSync(path.join(OUT, 'pdf-all-patrons.png'), pShot.toPNG());
+  pWin.destroy();
+  console.log('wrote .shots/pdf-all-patrons.png');
 
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ }
   app.exit(0);

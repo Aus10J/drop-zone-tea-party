@@ -18,7 +18,8 @@ Everything lives in one SQLite file you can copy to a thumb drive.
 | **Price** | Edit any price inline, or re-price a whole category at once. Every change is logged with its old value |
 | **Stock** | Live inventory that decrements on every sale, with editable counts and a full adjustment audit trail |
 | **Track sales** | Every sale recorded with items, prices, payment method, bartender and time |
-| **Report** | Any date range: takings per night, trend vs the period before, top sellers, busiest hours, heaviest consumption, every override |
+| **Report** | Any date range: takings per night, trend vs the period before, top sellers, busiest hours, and a full ledger of every patron and what they drank |
+| **Safeguard** | If a drink could not be recorded against a patron, the sale is refused outright and a full-screen alert tells staff to fetch the administrator |
 | **Export** | One button writes every report as CSV plus a complete `.db` copy — or a formatted PDF |
 
 ---
@@ -144,6 +145,14 @@ any time.
 The patron panel shows the night total as pips plus a small meter per category,
 so the bartender can see which cap is about to bind before they pour. Both move
 live as items go on the ticket.
+
+**Recording safeguard.** Completing a sale re-checks, inside the same database
+transaction, that the patron's count actually moved by the number of drinks
+rung. If it did not — for any reason — the whole sale is rolled back (nothing
+charged, nothing recorded) and a full-screen red alert tells staff to **fetch
+the system administrator immediately** and stop serving on that machine. Better
+no sale than a drink that slipped through uncounted. In normal use this never
+fires; it is the backstop for the exact failure that once lost track of drinks.
 
 Three behaviours are available: *stop the sale* (default), *warn but allow*, or
 *track silently*. Age is checked too when a date of birth is on file, and it
@@ -408,10 +417,12 @@ want a week or a month at once.
 ### Generating a report
 
 **Generate PDF Report** produces a formatted, paginated document for the date
-range — headline figures, the chart, a night-by-night table, category and
-payment splits, top sellers, averages, and the override log. It opens when it
-is finished. This is the one to hand to leadership or put in a continuity
-binder; it needs no software beyond a PDF reader.
+range — headline figures, the chart, a night-by-night table, category splits,
+top sellers, averages, the override log, and a full **"All patrons & what they
+drank"** ledger listing every patron served with their customer ID, drink count
+and each drink they bought. It opens when it is finished. This is the one to
+hand to leadership or put in a continuity binder; it needs no software beyond a
+PDF reader.
 
 The shift-close summary also offers a one-click export of the night just
 finished.
@@ -537,8 +548,8 @@ the warning entirely means buying a code-signing certificate.
 ```bash
 npm install          # rebuilds the native SQLite module for Electron
 npm start            # run the app
-npm test             # 472 main-process checks: limits, caps, rollover, inventory, sales
-npm run test:ui      # 162 checks driving the real window, incl. a real PDF render
+npm test             # 479 main-process checks: limits, caps, recording safeguard, reports
+npm run test:ui      # 166 checks driving the real window, incl. a real PDF render
 npm run dist:win     # build the Windows x64 installer + portable exe
                      # (--publish never: releases are published by CI, not by
                      #  electron-builder, which otherwise tries to publish by

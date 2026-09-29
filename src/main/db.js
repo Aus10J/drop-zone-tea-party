@@ -1391,12 +1391,30 @@ function createOrder({ patronId, items, paymentMethod, bartender, overrideReason
       audit('limit_override',
         `order ${orderId} patron ${patronId}${caps ? ` [${caps}]` : ''}: ${overrideReason}`, bartender);
     }
+
+    // Integrity gate — the whole point of this system is that a poured drink
+    // lands on the patron's count. Before committing, re-read their count for
+    // tonight and confirm it rose by exactly what this ticket adds. If it did
+    // not (a zero-count item, a bad row, any bug), throw so the transaction
+    // rolls back: better no sale at all than a sale that was not recorded.
+    const recount = countsToday(patronId);
+    const expected = quote.already.total + quote.servings;
+    if (recount.servings !== expected) {
+      audit('recording_check_failed',
+        `order ${orderId} patron ${patronId}: expected ${expected}, found ${recount.servings}`,
+        bartender);
+      throw new Error('DRINK_NOT_RECORDED: this sale would not have been counted '
+        + 'against the patron and was cancelled. Alert the system administrator '
+        + 'immediately — do not keep serving on this machine.');
+    }
     return orderId;
   });
 
   const orderId = tx();
   return {
     orderId,
+    recorded: true,
+    servings: quote.servings,
     subtotalCents: quote.subtotalCents,
     standardDrinks: quote.standardDrinks,
     patron: patronId ? patronStatus(patronId) : null,
@@ -1683,6 +1701,36 @@ function salesReport(from, to) {
     SELECT COUNT(*) n, COALESCE(SUM(subtotal_cents),0) cents
       FROM orders WHERE business_date BETWEEN ? AND ? AND voided = 1`).get(from, to);
 
+  // Every patron served in the range, with exactly what they drank — one row
+  // per patron per product, folded together in JS. This is the full ledger for
+  // the shift report, not a top-N.
+  const patronItemRows = db.prepare(`
+    SELECT o.patron_id,
+           COALESCE(p.display_name, p.dod_id, '#' || p.last4, 'Card …' || substr(p.card_payload,-5), 'Patron ' || p.id) label,
+           p.dod_id,
+           oi.product_name, SUM(oi.qty) qty,
+           SUM(oi.qty * oi.unit_price_cents) cents
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      LEFT JOIN patrons p ON p.id = o.patron_id
+     WHERE o.business_date BETWEEN ? AND ? AND o.voided = 0 AND o.patron_id IS NOT NULL
+     GROUP BY o.patron_id, oi.product_name
+     ORDER BY label, oi.product_name`).all(from, to);
+
+  const patronMap = new Map();
+  for (const r of patronItemRows) {
+    if (!patronMap.has(r.patron_id)) {
+      patronMap.set(r.patron_id, {
+        label: r.label, dodId: r.dod_id, drinks: 0, cents: 0, items: [],
+      });
+    }
+    const rec = patronMap.get(r.patron_id);
+    rec.items.push({ name: r.product_name, qty: r.qty, cents: r.cents });
+    rec.drinks += r.qty;              // every drink counts as one
+    rec.cents += r.cents;
+  }
+  const patronsAll = [...patronMap.values()].sort((a, b) => a.label.localeCompare(b.label));
+
   // Hour-of-night buckets. created_at is stored UTC, so convert in JS rather
   // than with strftime, which would bucket by UTC hour and skew the peak.
   const stamps = db.prepare(`
@@ -1717,6 +1765,7 @@ function salesReport(from, to) {
     },
     busiest,
     series, byCategory, byPayment, topProducts, heavyPatrons, overrides, voids, hourly,
+    patronsAll,
   };
 }
 

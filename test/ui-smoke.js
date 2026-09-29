@@ -786,6 +786,48 @@ app.whenReady().then(async () => {
         '!document.querySelector("#patronCard").classList.contains("hidden")'));
     }
 
+    console.log('\nRecording safeguard (system-administrator halt)');
+    {
+      // A patron is loaded from the scanner block above. Build a ticket, then
+      // force the halt state the integrity gate would set and confirm the sale
+      // is blocked with the admin alert rather than completed. (A genuinely
+      // uncountable line cannot be created — std drinks is forced to 1 — so the
+      // gate itself is driven directly here.)
+      await js(win, 'Array.from(document.querySelectorAll(".cattab")).find(t => t.textContent === "Beer").click()');
+      await sleep(200);
+      await js(win, 'document.querySelectorAll(".prod")[0].click()');
+      await waitFor(win, 'document.querySelectorAll(".tline").length === 1', 'halt ticket');
+
+      const ordersBefore = await js(win,
+        '(async () => (await window.api.order.recent({ limit: 50 })).data.length)()');
+
+      await js(win, `(() => {
+        const b = document.querySelector('#completeSale');
+        b.dataset.halt = '1';
+        b.click();
+      })()`);
+
+      check('the halt alert appears', await waitFor(win,
+        '!document.querySelector("#modalRoot").classList.contains("hidden") && /Sale halted/.test(document.querySelector("#modalTitle").textContent)',
+        'halt modal'));
+      check('it says to alert the administrator', await js(win,
+        '/alert the system administrator/i.test(document.querySelector("#modalBody").textContent)'));
+      check('it cannot be dismissed with Escape', await js(win, `(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        return !document.querySelector('#modalRoot').classList.contains('hidden');
+      })()`));
+      check('no sale was recorded', await js(win,
+        `(async () => (await window.api.order.recent({ limit: 50 })).data.length === ${ordersBefore})()`));
+
+      // Dismiss and reset for the health check.
+      await js(win, `Array.from(document.querySelectorAll('#modalActions .btn'))
+        .find(b => /noted/i.test(b.textContent)).click()`);
+      await sleep(200);
+      await js(win, 'document.querySelector("#clearTicket") && document.querySelector("#clearTicket").click()');
+      await js(win, 'document.querySelector("#clearPatron") && document.querySelector("#clearPatron").click()');
+      await sleep(200);
+    }
+
     console.log('\nConsole health');
     const inPageErrors = await js(win, 'JSON.stringify(window.__err || [])');
     check('no uncaught errors in the page', inPageErrors === '[]', inPageErrors);

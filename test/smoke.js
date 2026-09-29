@@ -368,6 +368,7 @@ function main() {
     patronId, items: [{ productId: beerId, qty: 2 }], bartender: 'SSgt Rivera',
   });
   eq('order total', sale1.subtotalCents, 1000);
+  check('the sale confirms it was recorded', sale1.recorded === true);
   const afterSale1 = db.patronStatus(patronId);
   eq('count advances in drinks served, not ABV units', afterSale1.today.servings, 2);
   eq('the beer group advances', afterSale1.today.byGroup.beer, 2);
@@ -1196,6 +1197,23 @@ function main() {
   check('chart rendered as inline SVG', html.includes('<svg') && html.includes('class="bar"'));
   check('nightly table included', html.includes('Takings per night'));
   check('the card hash never reaches the report', !/card_hash/i.test(html));
+
+  // Every patron and what they drank — the full ledger, not a top-N.
+  check('report lists all patrons and their drinks',
+    html.includes('All patrons') && html.includes('What they drank'));
+  const served = db.salesReport(salesToday, salesToday).patronsAll;
+  check('at least one patron is on the ledger', served.length >= 1);
+  check('each ledger patron carries their itemised drinks',
+    served.every((pt) => Array.isArray(pt.items) && pt.items.length >= 1));
+  check('ledger drink counts equal the sum of their item quantities',
+    served.every((pt) => pt.drinks === pt.items.reduce((n, i) => n + i.qty, 0)));
+  const someServed = served[0];
+  check('and the ledger names appear in the printed report',
+    html.includes(someServed.label),
+    someServed.label);
+  // A patron with two of one drink shows the quantity, e.g. "2× Tuborg Green".
+  check('items are shown with their quantity',
+    /\d+×\s/.test(html));
   const nastyName = 'Bad <script>alert(1)</script> & "Co"';
   db.setProductPrice(products.find((p) => p.name === 'Tuborg Green').id, 123, 'test');
   db.saveProduct({ category: 'na', name: nastyName, price_cents: 100, active: 1, serving_oz: 8, abv: 0 });
