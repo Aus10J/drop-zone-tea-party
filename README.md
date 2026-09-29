@@ -117,10 +117,12 @@ it; lower either one to make it bite. Admin spells the resulting policy back to
 you in plain English as you change the numbers, which catches caps that can
 never actually apply.
 
-**Counting is in drinks served, not ABV-weighted units.** One pour is one
-drink, whether it is the 4.6% Tuborg or the 7% Kaiju IPA. That is what a
-bartender can explain across the bar. Standard drinks are still calculated and
-reported — they just do not gate the sale.
+**Every drink counts as one.** One pour is one drink against a patron's record,
+whether it is the 4.6% Tuborg or the 7% Kaiju IPA — no ABV weighting, nothing
+to configure per item. This is fixed in the database itself: no manager edit,
+import, or future code can set a drink to count as anything but one. (An earlier
+build let this be edited per item, and a value of 0 once meant sales were not
+landing on anyone's record — that hole is closed.)
 
 Category mapping: beer → beer, wine → wine, spirits **and cocktails** → liquor.
 
@@ -133,12 +135,11 @@ Category mapping: beer → beer, wine → wine, spirits **and cocktails** → li
 - Voiding an order gives the drinks back on both the night total and the
   category count, and restores the stock.
 
-**The menu is alcohol only.** There are no soft drinks, coffee or water on it,
-so a patron who has reached their night total cannot be sold anything at all
-until the rollover, and a patron under the minimum age cannot be sold anything
-at any time. If you ever want a cut-off patron to be able to buy a Coke, add a
-zero-ABV item — the counting keys off alcohol content rather than the category
-name, so anything at 0% is automatically exempt from every cap.
+**The menu is alcohol only, and every item counts.** There are no soft drinks,
+coffee or water, and there is no longer any way to make an item not count —
+every drink is worth one. So a patron at their night total cannot be sold
+anything until the rollover, and an underage patron cannot be sold anything at
+any time.
 
 The patron panel shows the night total as pips plus a small meter per category,
 so the bartender can see which cap is about to bind before they pour. Both move
@@ -198,6 +199,13 @@ commit.
 
 Every price change — single or bulk — is written to the audit log with the old
 value, the new value, and who did it. Prices can never go negative.
+
+The Inventory table is deliberately spare: **Beverage, Price, On hand**. Edit a
+count the same way you edit a price — click it, type, Enter — and it saves as a
+recount, logged in the Adjustment Log below. Adding a beverage (**+ New Item**)
+asks only for its name, category, price and opening count; category is what
+puts it on the right Beer/Spirits/Wine tab and decides which cap it counts
+against.
 
 ---
 
@@ -529,8 +537,8 @@ the warning entirely means buying a code-signing certificate.
 ```bash
 npm install          # rebuilds the native SQLite module for Electron
 npm start            # run the app
-npm test             # 470 main-process checks: limits, caps, rollover, lookup, sales
-npm run test:ui      # 159 checks driving the real window, incl. a real PDF render
+npm test             # 472 main-process checks: limits, caps, rollover, inventory, sales
+npm run test:ui      # 162 checks driving the real window, incl. a real PDF render
 npm run dist:win     # build the Windows x64 installer + portable exe
                      # (--publish never: releases are published by CI, not by
                      #  electron-builder, which otherwise tries to publish by

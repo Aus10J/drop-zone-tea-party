@@ -58,9 +58,11 @@ function main() {
     !products.some((p) => p.category === 'na'),
     products.filter((p) => p.category === 'na').map((p) => p.name).join(','));
   const ipa = products.find((p) => p.name.includes('Metamorphosis'));
-  near('7% / 12oz IPA is 1.4 standard drinks', ipa.standard_drinks, 1.4);
+  eq('every drink counts as exactly one', ipa.standard_drinks, 1);
   const woodford = products.find((p) => p.name === 'Woodford Reserve');
-  near('45.2% / 1.5oz pour is 1.13 standard drinks', woodford.standard_drinks, 1.13);
+  eq('a strong pour counts as one too', woodford.standard_drinks, 1);
+  check('nothing on the menu is worth anything but one',
+    products.every((p) => p.standard_drinks === 1));
   eq('spirits priced at $6', woodford.price_cents, 600);
 
   eq('venue named', db.getSetting('venue_name'), 'Drop Zone Tea Party');
@@ -359,7 +361,7 @@ function main() {
   eq('two beers count as two drinks', quote1.servings, 2);
   eq('counted against the beer cap', quote1.byGroup.beer, 2);
   eq('liquor untouched by a beer ticket', quote1.byGroup.liquor, 0);
-  near('standard drinks still calculated for reporting', quote1.standardDrinks, 1.84);
+  eq('two drinks is a standard-drink figure of two', quote1.standardDrinks, 2);
   check('under the limit, no override needed', !quote1.needsOverride);
 
   const sale1 = db.createOrder({
@@ -468,16 +470,22 @@ function main() {
   eq('and not against beer', cocktailQuote.byGroup.beer, 0);
   check('so it hits the liquor cap too', cocktailQuote.needsOverride);
 
-  // The counting rule keys off alcohol content, not the category name — so a
-  // 0% item would still be exempt if one ever existed. Nothing on the menu is.
+  // Every drink counts as one, full stop — even one saved with no ABV, which
+  // is exactly the case that once slipped through at 0 and lost tracking. The
+  // database forces standard_drinks to 1 no matter what is passed in.
   const zeroAbvId = db.saveProduct({
     category: 'beer', name: 'Test Zero-Proof', abv: 0, serving_oz: 12,
-    price_cents: 300, active: 1, qty_on_hand: 10,
+    standard_drinks: 0, price_cents: 300, active: 1, qty_on_hand: 10,
   });
-  const zeroQuote = db.priceTicket({ patronId: lid, items: [{ productId: zeroAbvId, qty: 3 }] });
-  eq('a zero-alcohol item adds no servings', zeroQuote.servings, 0);
-  eq('and no group counts', zeroQuote.byGroup.beer, 0);
-  check('so it is never blocked', !zeroQuote.needsOverride && zeroQuote.breaches.length === 0);
+  const zeroRow = db.listProducts().find((p) => p.id === zeroAbvId);
+  eq('a product saved with 0 is stored as 1', zeroRow.standard_drinks, 1);
+  const zeroQuote = db.priceTicket({ patronId: lid, items: [{ productId: zeroAbvId, qty: 1 }] });
+  eq('so it still counts as a served drink', zeroQuote.servings, 1);
+  eq('and lands on its category', zeroQuote.byGroup.beer, 1);
+  // Direct write attempt must also be forced to 1 by the trigger.
+  db.handle().prepare('UPDATE products SET standard_drinks = 0 WHERE id = ?').run(zeroAbvId);
+  eq('even a direct write to 0 is corrected to 1',
+    db.listProducts({ includeInactive: true }).find((p) => p.id === zeroAbvId).standard_drinks, 1);
   db.archiveProduct(zeroAbvId);
 
   /* ---------------------------------------------------------------- */
@@ -1147,8 +1155,8 @@ function main() {
   check('spend per patron computed', sales.avgPerPatron.cents > 0);
   const salesGin = sales.topProducts.find((t) => t.product_name === 'Tanqueray Gin');
   eq('voided units excluded from the series', salesGin ? salesGin.units : 0, 3);
-  check('drinks served reported alongside standard drinks',
-    sales.totals.servings > 0 && sales.totals.servings !== sales.totals.drinks);
+  check('drinks served are reported and each counts as one',
+    sales.totals.servings > 0 && sales.totals.servings === sales.totals.drinks);
   eq('series servings reconcile with the total',
     sales.series.reduce((n, d) => n + d.servings, 0), sales.totals.servings);
 

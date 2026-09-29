@@ -86,8 +86,8 @@ app.whenReady().then(async () => {
     await js(win, 'document.querySelectorAll(".prod")[0].click()');
     check('ticket line appears', await waitFor(win, 'document.querySelectorAll(".tline").length === 1', 'ticket line'));
     eq('beer priced at $5.00', await js(win, 'document.querySelector("#tTotal").textContent'), '$5.00');
-    eq('counted as one drink, with the ABV figure alongside',
-      await js(win, 'document.querySelector("#tDrinks").textContent'), '1 (1.4 std)');
+    eq('counted as exactly one drink',
+      await js(win, 'document.querySelector("#tDrinks").textContent'), '1');
     check('no payment selector — card is the only tender',
       await js(win, 'document.querySelector("#paySelect") === null'));
     check('no walk-in escape hatch', await js(win, 'document.querySelector("#walkInBtn") === null'));
@@ -592,6 +592,13 @@ app.whenReady().then(async () => {
       await waitFor(win, 'document.querySelectorAll("#invTable tbody tr").length >= 14', 'inventory rows'));
     check('every row has an editable price field',
       await js(win, 'document.querySelectorAll("#invTable .price-cell input").length >= 14'));
+    eq('the table is down to four columns',
+      await js(win, 'JSON.stringify(Array.from(document.querySelectorAll("#invTable thead th")).map(t => t.textContent))'),
+      '["Beverage","Price","On hand",""]');
+    check('no standard-drinks column remains',
+      await js(win, '!Array.from(document.querySelectorAll("#invTable thead th")).some(t => /std|ABV|serving|par|category/i.test(t.textContent))'));
+    check('on hand is editable inline',
+      await js(win, 'document.querySelectorAll("#invTable tbody tr")[0].querySelectorAll("input").length === 2'));
     check('non-alcoholic is not offered when adding an item', await js(win, `(() => {
       document.querySelector('#newProductBtn').click();
       const opts = Array.from(document.querySelectorAll('#modalBody select option')).map(o => o.value);

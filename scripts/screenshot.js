@@ -172,6 +172,13 @@ async function main() {
   fs.writeFileSync(path.join(OUT, 'bar.png'), img.toPNG());
   console.log('wrote .shots/bar.png');
 
+  // The simplified inventory table: beverage, price, on hand.
+  await js('document.querySelector(\'.navbtn[data-view="inventory"]\').click()');
+  await sleep(700);
+  img = await win.webContents.capturePage();
+  fs.writeFileSync(path.join(OUT, 'inventory.png'), img.toPNG());
+  console.log('wrote .shots/inventory.png');
+
   // The patron roster, with its per-row actions.
   await js('document.querySelector(\'.navbtn[data-view="patrons"]\').click()');
   await sleep(700);

@@ -340,6 +340,27 @@ function migrate() {
     audit('products_retired',
       `${retired.changes} non-alcoholic item(s) taken off the menu`, 'system');
   }
+
+  // Every drink is worth exactly one against a patron's count. This used to be
+  // an editable per-item figure, and a value of 0 meant a sale never landed on
+  // anyone's record — a real loss of tracking once a manager set one to 0.
+  // Fix any existing rows, and enforce the rule in the database itself so no
+  // code path, import, or manual edit can ever store anything but 1 again.
+  const fixedStd = db.prepare(
+    'UPDATE products SET standard_drinks = 1 WHERE standard_drinks IS NOT 1').run();
+  if (fixedStd.changes) {
+    audit('std_drinks_normalized',
+      `${fixedStd.changes} product(s) reset to 1 standard drink`, 'system');
+  }
+  for (const evt of ['INSERT', 'UPDATE']) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_products_std_one_${evt.toLowerCase()}
+      AFTER ${evt} ON products
+      WHEN NEW.standard_drinks IS NOT 1
+      BEGIN
+        UPDATE products SET standard_drinks = 1 WHERE id = NEW.id;
+      END`);
+  }
 }
 
 function seedProducts() {
@@ -350,7 +371,9 @@ function seedProducts() {
     VALUES (?, 0, 'each', 0)`);
   const tx = db.transaction(() => {
     for (const [cat, brand, name, abv, oz, price, sort] of SEED_PRODUCTS) {
-      const r = insP.run(cat, brand, name, abv, oz, price, standardDrinks(oz, abv), sort);
+      // Every item is worth one drink; ABV and pour size are kept for
+      // reference only and no longer drive the count.
+      const r = insP.run(cat, brand, name, abv, oz, price, 1, sort);
       insI.run(r.lastInsertRowid);
     }
     audit('seed_products', `${SEED_PRODUCTS.length} products seeded from menu board`, 'system');
@@ -1080,9 +1103,9 @@ function listProducts({ includeInactive = false } = {}) {
 }
 
 function saveProduct(p) {
-  const sd = (p.standard_drinks === '' || p.standard_drinks == null)
-    ? standardDrinks(p.serving_oz, p.abv)
-    : Number(p.standard_drinks);
+  // Always 1 — one purchase, one drink on the patron's record. Not settable
+  // from anywhere; the database trigger enforces this too.
+  const sd = 1;
   const args = [
     p.category, p.brand || null, p.name,
     p.abv === '' || p.abv == null ? null : Number(p.abv),

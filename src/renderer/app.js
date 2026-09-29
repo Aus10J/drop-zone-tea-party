@@ -1516,8 +1516,10 @@ async function renderInventory() {
   tbody.replaceChildren();
 
   for (const r of shown) {
+    // On hand — edit the number directly and it saves as a recount.
     const qtyInput = el('input', {
-      class: 'input tiny num', type: 'number', step: '0.001', value: String(r.qty_on_hand),
+      class: 'input tiny num', type: 'number', step: '1', value: String(r.qty_on_hand),
+      title: 'Type the count on hand, Enter to save',
     });
     const commitCount = async () => {
       const next = num(qtyInput.value, r.qty_on_hand);
@@ -1527,44 +1529,17 @@ async function renderInventory() {
         actor: state.settings.bartender_name || null,
       });
       if (!res) { qtyInput.value = String(r.qty_on_hand); return; }
+      r.qty_on_hand = res.qty_on_hand;
       state.lowStock = res.lowStock;
       renderChrome();
       await refreshProductsCache();
-      toast(`${r.name} recounted to ${round2(res.qty_on_hand)}.`, 'ok', 1800);
-      renderInventory();
+      toast(`${r.name} set to ${round2(res.qty_on_hand)} on hand.`, 'ok', 1800);
     };
     qtyInput.addEventListener('blur', commitCount);
     qtyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); qtyInput.blur(); } });
 
-    const deltaInput = el('input', { class: 'input tiny num', type: 'text', placeholder: '+/−' });
-    const reasonSel = el('select', { class: 'input tiny' }, [
-      el('option', { value: 'delivery', text: 'Delivery' }),
-      el('option', { value: 'spill', text: 'Spill' }),
-      el('option', { value: 'comp', text: 'Comp' }),
-      el('option', { value: 'transfer', text: 'Transfer' }),
-      el('option', { value: 'correction', text: 'Correction' }),
-    ]);
-    const applyDelta = async () => {
-      const d = parseFloat(deltaInput.value);
-      if (!d || Number.isNaN(d)) return;
-      const res = await tryReq(window.api.inventory.adjust, {
-        productId: r.id, delta: d, reason: reasonSel.value,
-        actor: state.settings.bartender_name || null,
-      });
-      deltaInput.value = '';
-      if (!res) return;
-      state.lowStock = res.lowStock;
-      renderChrome();
-      await refreshProductsCache();
-      toast(`${r.name} ${d > 0 ? '+' : ''}${d} (${reasonSel.value}) → ${round2(res.qty_on_hand)}.`, 'ok', 2000);
-      renderInventory();
-      renderAdjustments();
-    };
-    deltaInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyDelta(); } });
-
-    // Price is editable in place — the fastest path when the club changes what
-    // something costs. Deliberately does not re-render the table on save, so
-    // the manager can tab straight down a column re-pricing as they go.
+    // Price — editable in place. Does not re-render on save, so a manager can
+    // tab straight down the column re-pricing as they go.
     const priceInput = el('input', {
       class: 'input tiny num', type: 'number', step: '0.25', min: '0',
       value: (r.price_cents / 100).toFixed(2),
@@ -1590,35 +1565,12 @@ async function renderInventory() {
     priceInput.addEventListener('blur', commitPrice);
     priceInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); priceInput.blur(); } });
 
-    const parInput = el('input', { class: 'input tiny num', type: 'number', step: '1', value: String(r.par_level) });
-    const unitInput = el('input', { class: 'input tiny', type: 'text', value: r.unit || 'each' });
-    const commitMeta = async () => {
-      await tryReq(window.api.inventory.meta, {
-        productId: r.id, unit: unitInput.value.trim() || 'each', par_level: num(parInput.value, 0),
-      });
-      state.lowStock = await tryReq(window.api.inventory.lowStock) || state.lowStock;
-      renderChrome();
-    };
-    parInput.addEventListener('blur', commitMeta);
-    unitInput.addEventListener('blur', commitMeta);
-
     tbody.appendChild(el('tr', { class: r.active ? '' : 'inactive' }, [
-      el('td', {}, [
-        el('div', { text: r.name }),
-        r.brand ? el('div', { class: 'prod-meta', text: r.brand }) : null,
-      ]),
-      el('td', { text: CATEGORY_LABELS[r.category] || r.category }),
-      el('td', { class: 'num', text: r.abv ? `${r.abv}%` : '—' }),
-      el('td', { class: 'num', text: r.serving_oz ? `${r.serving_oz} oz` : '—' }),
-      el('td', { class: 'num', text: String(round2(r.standard_drinks)) }),
+      el('td', {}, [el('div', { text: r.name })]),
       el('td', { class: 'num' }, [
         el('span', { class: 'price-cell' }, [el('span', { class: 'money-mark', text: '$' }), priceInput]),
       ]),
       el('td', { class: 'num' }, [qtyInput]),
-      el('td', {}, [unitInput]),
-      el('td', { class: 'num' }, [parInput]),
-      el('td', { class: 'num' }, [el('div', { class: 'qty-ctl' }, [deltaInput, reasonSel])]),
-      el('td', { text: r.last_counted_at ? fmtDateTime(r.last_counted_at) : '—' }),
       el('td', {}, [
         el('button', { class: 'btn small ghost', text: 'Edit', onclick: () => editProduct(r) }),
       ]),
@@ -1626,7 +1578,7 @@ async function renderInventory() {
   }
 
   if (!shown.length) {
-    tbody.appendChild(el('tr', {}, [el('td', { colspan: '12' }, [el('p', { class: 'empty', text: 'Nothing matches.' })])]));
+    tbody.appendChild(el('tr', {}, [el('td', { colspan: '4' }, [el('p', { class: 'empty', text: 'Nothing matches.' })])]));
   }
 }
 
@@ -1671,44 +1623,22 @@ function editProduct(existing) {
   const catSel = el('select', { class: 'input' }, CATEGORY_ORDER.map((c) =>
     el('option', { value: c, text: CATEGORY_LABELS[c], selected: c === p.category })));
   const nameIn = el('input', { class: 'input', type: 'text', value: p.name });
-  const brandIn = el('input', { class: 'input', type: 'text', value: p.brand || '' });
-  const abvIn = el('input', { class: 'input', type: 'number', step: '0.1', min: '0', value: p.abv ?? '' });
-  const ozIn = el('input', { class: 'input', type: 'number', step: '0.1', min: '0', value: p.serving_oz ?? '' });
   const priceIn = el('input', { class: 'input', type: 'number', step: '0.25', min: '0', value: ((p.price_cents || 0) / 100).toFixed(2) });
-  const sdIn = el('input', { class: 'input', type: 'number', step: '0.01', min: '0', value: p.standard_drinks ?? '' });
-  const skuIn = el('input', { class: 'input', type: 'text', value: p.sku || '' });
+  const qtyIn = el('input', { class: 'input', type: 'number', step: '1', min: '0', value: String(p.qty_on_hand || 0) });
   const activeIn = el('input', { type: 'checkbox' });
   activeIn.checked = !!p.active;
-  const sortIn = el('input', { class: 'input', type: 'number', step: '10', value: String(p.sort_order || 0) });
-  const qtyIn = el('input', { class: 'input', type: 'number', step: '1', min: '0', value: String(p.qty_on_hand || 0) });
-  const unitIn = el('input', { class: 'input', type: 'text', value: p.unit || 'each' });
-  const parIn = el('input', { class: 'input', type: 'number', step: '1', min: '0', value: String(p.par_level || 0) });
-
-  // Keep the standard-drink figure in step with ABV and pour size unless the
-  // operator has deliberately typed their own number.
-  const recalc = () => {
-    const oz = num(ozIn.value), abv = num(abvIn.value);
-    if (oz > 0 && abv > 0) sdIn.value = String(round2((oz * (abv / 100)) / 0.6));
-  };
-  abvIn.addEventListener('input', recalc);
-  ozIn.addEventListener('input', recalc);
 
   openModal({
-    title: isNew ? 'New Item' : `Edit — ${p.name}`,
+    title: isNew ? 'New Beverage' : `Edit — ${p.name}`,
     body: [el('div', { class: 'form' }, [
-      el('label', { class: 'lbl' }, ['Name', nameIn]),
+      el('label', { class: 'lbl' }, ['Beverage', nameIn]),
+      // Category still decides which Beer/Spirits/Wine tab it appears on and
+      // which cap it counts against, so it stays even though the table hides it.
       el('label', { class: 'lbl' }, ['Category', catSel]),
-      el('label', { class: 'lbl' }, ['Brand (optional)', brandIn]),
       el('label', { class: 'lbl' }, ['Price (USD)', priceIn]),
-      el('label', { class: 'lbl' }, ['ABV %', abvIn]),
-      el('label', { class: 'lbl' }, ['Serving size (fl oz)', ozIn]),
-      el('label', { class: 'lbl' }, ['Standard drinks per serving (auto from ABV × oz)', sdIn]),
-      el('label', { class: 'lbl' }, ['SKU (optional)', skuIn]),
-      el('label', { class: 'lbl' }, ['Menu sort order', sortIn]),
-      isNew ? el('label', { class: 'lbl' }, ['Opening stock count', qtyIn]) : null,
-      el('label', { class: 'lbl' }, ['Stock unit', unitIn]),
-      el('label', { class: 'lbl' }, ['Par level (warn at or below)', parIn]),
+      isNew ? el('label', { class: 'lbl' }, ['Opening stock on hand', qtyIn]) : null,
       el('label', { class: 'chk' }, [activeIn, 'On the menu']),
+      el('p', { class: 'hint', text: 'Every drink counts as one against a patron’s record.' }),
     ])],
     actions: [
       { label: 'Cancel', cls: 'ghost' },
@@ -1730,31 +1660,27 @@ function editProduct(existing) {
             id: existing ? existing.id : undefined,
             category: catSel.value,
             name: nameIn.value.trim(),
-            brand: brandIn.value.trim(),
-            abv: abvIn.value,
-            serving_oz: ozIn.value,
+            // Carried through unchanged where they already exist; no longer
+            // edited here. standard_drinks is forced to 1 in the database.
+            brand: p.brand || '',
+            abv: p.abv ?? '',
+            serving_oz: p.serving_oz ?? '',
             price_cents: centsFromDollars(priceIn.value),
-            standard_drinks: sdIn.value,
-            sku: skuIn.value.trim(),
+            sku: p.sku || '',
             active: activeIn.checked,
-            sort_order: num(sortIn.value, 0),
+            sort_order: num(p.sort_order, 0),
             qty_on_hand: num(qtyIn.value, 0),
-            unit: unitIn.value.trim() || 'each',
-            par_level: num(parIn.value, 0),
+            unit: p.unit || 'each',
+            par_level: num(p.par_level, 0),
           };
           const res = await tryReq(window.api.product.save, { product });
           if (!res) return;
-          if (!isNew) {
-            await tryReq(window.api.inventory.meta, {
-              productId: existing.id, unit: product.unit, par_level: product.par_level,
-            });
-          }
           close();
           await refreshProductsCache();
           state.lowStock = await tryReq(window.api.inventory.lowStock) || state.lowStock;
           renderChrome();
           renderInventory();
-          toast(isNew ? 'Item added.' : 'Item saved.', 'ok');
+          toast(isNew ? 'Beverage added.' : 'Beverage saved.', 'ok');
         },
       },
     ].filter(Boolean),
