@@ -17,6 +17,7 @@ Everything lives in one SQLite file you can copy to a thumb drive.
 | **Sell** | Tap a category, tap a drink, done. Card only. The screen resets for the next customer on every sale |
 | **Price** | Edit any price inline, or re-price a whole category at once. Every change is logged with its old value |
 | **Stock** | Live inventory that decrements on every sale, with editable counts and a full adjustment audit trail |
+| **Import** | Load a whole menu from an Excel or CSV file, with a preview of exactly what will be added, updated, or archived before you commit |
 | **Track sales** | Every sale recorded with items, prices, payment method, bartender and time |
 | **Report** | Any date range: takings per night, trend vs the period before, top sellers, busiest hours, and a full ledger of every patron and what they drank |
 | **Safeguard** | If a drink could not be recorded against a patron, the sale is refused outright and a full-screen alert tells staff to fetch the administrator |
@@ -215,6 +216,26 @@ recount, logged in the Adjustment Log below. Adding a beverage (**+ New Item**)
 asks only for its name, category, price and opening count; category is what
 puts it on the right Beer/Spirits/Wine tab and decides which cap it counts
 against.
+
+### Importing a menu from Excel or CSV
+
+**Inventory → Import Inventory** loads a whole menu from a spreadsheet, so a
+long list doesn't have to be typed in. The file needs a header row with at
+least an **ITEM** column and a **PRICE** column; **Category**, ABV and Serving
+are used if present (a `STD Drinks` column is ignored — every drink counts as
+one). Columns are matched by header name, so their order doesn't matter, and
+`.xlsx` or `.csv` both work. Prices can be plain numbers or currency-formatted
+(`$2.00`); categories like BEER / SPIRIT / LIQUOR / WINE / COCKTAIL are mapped
+automatically, and anything unrecognised is filed under "Other" and flagged.
+
+Nothing changes until you confirm. After picking the file you get a **preview**
+— how many items will be added, how many existing ones will be updated (with
+the price/category changes named), and any warnings — then it applies behind
+the manager PIN. Matching is by beverage name, so re-importing an updated
+sheet **updates prices in place instead of creating duplicates**. By default
+items already on the menu but missing from the file are left alone; an opt-in
+**"Archive anything not in this file"** checkbox turns the import into a full
+menu replace, and the preview shows exactly how many that would archive first.
 
 ---
 
@@ -548,8 +569,8 @@ the warning entirely means buying a code-signing certificate.
 ```bash
 npm install          # rebuilds the native SQLite module for Electron
 npm start            # run the app
-npm test             # 479 main-process checks: limits, caps, recording safeguard, reports
-npm run test:ui      # 166 checks driving the real window, incl. a real PDF render
+npm test             # 505 main-process checks: limits, caps, import, recording safeguard, reports
+npm run test:ui      # 170 checks driving the real window, incl. a real PDF render
 npm run dist:win     # build the Windows x64 installer + portable exe
                      # (--publish never: releases are published by CI, not by
                      #  electron-builder, which otherwise tries to publish by

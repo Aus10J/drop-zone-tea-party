@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('api', {
     meta: call('inventory:meta'),
     adjustments: call('inventory:adjustments'),
     lowStock: call('inventory:lowStock'),
+    importChoose: call('inventory:importChoose'),
+    importApply: call('inventory:importApply'),
   },
 
   ticket: {

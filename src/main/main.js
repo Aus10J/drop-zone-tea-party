@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const db = require('./db');
 const cac = require('./cac');
 const exports_ = require('./exports');
+const importer = require('./importer');
 
 /* ------------------------------------------------------------------ *
  * Last-resort error handling
@@ -277,6 +278,47 @@ function registerIpc() {
   });
   handle('inventory:adjustments', ({ limit }) => db.inventoryAdjustments({ limit }));
   handle('inventory:lowStock', () => db.lowStock());
+
+  /* --- import a menu from Excel / CSV ----------------------------- */
+  handle('inventory:importChoose', async () => {
+    const res = await dialog.showOpenDialog(win, {
+      title: 'Choose an inventory file',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Spreadsheet', extensions: ['xlsx', 'xlsm', 'csv'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    if (res.canceled || !res.filePaths.length) return { canceled: true };
+
+    const filePath = res.filePaths[0];
+    const matrix = await importer.readMatrix(filePath);
+    const { items, warnings } = importer.normalizeRows(matrix);
+    const plan = importer.planImport(items, { replace: false });
+    // The archive count for replace mode, so the checkbox can show it without a round-trip.
+    const replacePlan = importer.planImport(items, { replace: true });
+    return {
+      fileName: path.basename(filePath),
+      items,
+      warnings,
+      counts: plan.counts,
+      archiveIfReplace: replacePlan.counts.archive,
+      sampleAdd: plan.add.slice(0, 8).map((i) => i.name),
+      sampleUpdate: plan.update.slice(0, 8).map((i) => `${i.name} (${i.changes.join(', ') || 'no change'})`),
+      sampleArchive: replacePlan.archive.slice(0, 8).map((p) => p.name),
+    };
+  });
+
+  handle('inventory:importApply', ({ items, replace, pin }) => {
+    if (db.getSetting('require_pin_for_admin') === '1' && !db.verifyPin(pin)) {
+      throw new Error('Manager PIN incorrect.');
+    }
+    if (!Array.isArray(items) || !items.length) throw new Error('Nothing to import.');
+    const counts = importer.applyImport(items, {
+      replace: !!replace, actor: db.getSetting('bartender_name') || 'manager',
+    });
+    return { counts, products: db.listProducts({ includeInactive: true }), lowStock: db.lowStock() };
+  });
 
   /* --- tickets + orders ------------------------------------------- */
   handle('ticket:price', ({ patronId, items }) => db.priceTicket({ patronId, items }));

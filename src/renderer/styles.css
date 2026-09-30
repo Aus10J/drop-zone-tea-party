@@ -589,3 +589,12 @@ table.grid td .input { height: 30px; }
 }
 .admin-halt p { margin: 0 0 10px; }
 .admin-halt .ah-note { color: var(--text-faint); font-size: 12.5px; }
+
+/* Import-inventory preview. */
+.import-summary { margin: 4px 0 10px; padding-left: 20px; }
+.import-summary li { font-size: 13.5px; margin: 2px 0; }
+.import-group { margin: 8px 0; }
+.import-group-head { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); margin-bottom: 3px; }
+.import-names { font-size: 12.5px; color: var(--text-dim); }
+.import-warnings { margin-top: 10px; border-top: 1px solid var(--line-soft); padding-top: 8px; max-height: 140px; overflow-y: auto; }
+.import-warnings .hint { color: #f0c477; margin: 2px 0; }

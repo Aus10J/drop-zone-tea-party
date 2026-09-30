@@ -16,6 +16,7 @@ const path = require('node:path');
 const db = require('../src/main/db');
 const cac = require('../src/main/cac');
 const exporter = require('../src/main/exports');
+const importer = require('../src/main/importer');
 
 let passed = 0;
 const failures = [];
@@ -34,7 +35,7 @@ function section(name) { console.log(`\n${name}`); }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'barpos-test-'));
 
-function main() {
+async function main() {
   console.log(`temp data dir: ${tmp}`);
 
   /* ---------------------------------------------------------------- */
@@ -113,6 +114,86 @@ function main() {
     db.listProducts().filter((p) => p.category === 'wine').every((p) => p.price_cents === 700));
   check('bulk changes are audited',
     db.handle().prepare("SELECT COUNT(*) n FROM audit_log WHERE event='bulk_price_changed'").get().n >= 4);
+
+  /* ---------------------------------------------------------------- */
+  section('Importing a menu (CSV)');
+  const menuCsv = [
+    'ITEM,Category,ABV,Serving,STD Drinks,PRICE',
+    'BEER BUDWEISER,BEER,0,50 CL,1,$2.00',
+    'LIQUOR GIN TANQUERAY,SPIRIT,0,1.5 OZ,1,$2.00',
+    'WINE HOUSE RED,WINE,0,175 ML,1,$7.50',
+    'MYSTERY PUNCH,,0,,1,$5.00',              // no category -> falls back
+    'BEER BUDWEISER,BEER,0,50 CL,1,$9.99',    // duplicate -> ignored
+  ].join('\n');
+  const parsed = importer.normalizeRows(importer.parseCsv(menuCsv));
+  eq('four unique items parsed', parsed.items.length, 4);
+  const bud = parsed.items.find((i) => i.name === 'BEER BUDWEISER');
+  eq('BEER maps to beer', bud.category, 'beer');
+  eq('a currency price becomes cents', bud.priceCents, 200);
+  eq('SPIRIT maps to spirit',
+    parsed.items.find((i) => i.name === 'LIQUOR GIN TANQUERAY').category, 'spirit');
+  eq('WINE maps to wine',
+    parsed.items.find((i) => i.name === 'WINE HOUSE RED').category, 'wine');
+  eq('a decimal price parses', parsed.items.find((i) => i.name === 'WINE HOUSE RED').priceCents, 750);
+  eq('a missing category falls back to other',
+    parsed.items.find((i) => i.name === 'MYSTERY PUNCH').category, 'other');
+  check('the duplicate is flagged', parsed.warnings.some((w) => /Duplicate/i.test(w)));
+
+  const plan = importer.planImport(parsed.items, { replace: false });
+  eq('all four are new against the seeded menu', plan.counts.add, 4);
+  eq('nothing matches to update', plan.counts.update, 0);
+  eq('merge mode archives nothing', plan.counts.archive, 0);
+
+  const activeBefore = db.listProducts().length;
+  const applied = importer.applyImport(parsed.items, { replace: false, actor: 'test' });
+  eq('four beverages added', applied.add, 4);
+  eq('the menu grew by four', db.listProducts().length, activeBefore + 4);
+  const importedBud = db.listProducts().find((p) => p.name === 'BEER BUDWEISER');
+  check('the imported beer is on the menu', !!importedBud && importedBud.category === 'beer');
+  eq('and priced from the file', importedBud.price_cents, 200);
+  eq('an imported drink still counts as one', importedBud.standard_drinks, 1);
+  check('the import is audited',
+    db.handle().prepare("SELECT COUNT(*) n FROM audit_log WHERE event='inventory_imported'").get().n === 1);
+
+  // Re-importing the same list with a changed price updates rather than duplicates.
+  const reimport = parsed.items.map((i) => ({ ...i, priceCents: i.name === 'BEER BUDWEISER' ? 250 : i.priceCents }));
+  const plan2 = importer.planImport(reimport, { replace: false });
+  eq('the second import updates, not adds', plan2.counts.add, 0);
+  eq('all four now match', plan2.counts.update, 4);
+  importer.applyImport(reimport, { replace: false, actor: 'test' });
+  eq('the price was updated in place',
+    db.listProducts().find((p) => p.name === 'BEER BUDWEISER').price_cents, 250);
+  eq('no duplicate row was created',
+    db.listProducts({ includeInactive: true }).filter((p) => p.name === 'BEER BUDWEISER').length, 1);
+
+  // Replace mode is planned (read-only) — it would archive everything not listed.
+  const replacePlan = importer.planImport(parsed.items, { replace: true });
+  check('replace mode would archive the seeded items not in the file',
+    replacePlan.counts.archive >= 14,
+    String(replacePlan.counts.archive));
+
+  /* ---------------------------------------------------------------- */
+  section('Importing a menu (real .xlsx)');
+  {
+    const ExcelJS = require('exceljs');
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Sheet1');
+    ws.addRow(['ITEM', 'Category', 'ABV', 'Serving', 'STD Drinks', 'PRICE']);
+    const r1 = ws.addRow(['BEER PERONI', 'BEER', 0, '35.5 CL', 1, 3]);
+    r1.getCell(6).numFmt = '$0.00';           // a real currency-formatted number
+    ws.addRow(['LIQUOR RUM BACARDI', 'SPIRIT', 0, '1.5 OZ', 1, 2.5]);
+    const xlsxPath = path.join(tmp, 'menu.xlsx');
+    await wb.xlsx.writeFile(xlsxPath);
+
+    const matrix = await importer.readMatrix(xlsxPath);
+    const x = importer.normalizeRows(matrix);
+    eq('two rows read from the xlsx', x.items.length, 2);
+    const peroni = x.items.find((i) => i.name === 'BEER PERONI');
+    eq('a $-formatted number cell reads as cents', peroni.priceCents, 300);
+    eq('and its category maps', peroni.category, 'beer');
+    eq('a plain decimal cell reads as cents',
+      x.items.find((i) => i.name === 'LIQUOR RUM BACARDI').priceCents, 250);
+  }
 
   /* ---------------------------------------------------------------- */
   section('Standard drink math');
@@ -1387,7 +1468,7 @@ function main() {
   eq('products not re-seeded on restart',
     db.listProducts({ includeInactive: true }).length, productsBeforeRestart);
   eq('prices survive a restart',
-    db.listProducts().filter((p) => p.category === 'wine').every((p) => p.price_cents === 700), true);
+    (db.listProducts().find((p) => p.name === 'Dark Horse Merlot') || {}).price_cents, 700);
   db.close();
 
   /* ---------------------------------------------------------------- */
@@ -1401,13 +1482,15 @@ function main() {
   return failures.length === 0;
 }
 
-let ok = false;
-try {
-  ok = main();
-} catch (err) {
-  console.error('\nTest harness crashed:\n', err);
-  ok = false;
-} finally {
-  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ }
-}
-process.exit(ok ? 0 : 1);
+(async () => {
+  let ok = false;
+  try {
+    ok = await main();
+  } catch (err) {
+    console.error('\nTest harness crashed:\n', err);
+    ok = false;
+  } finally {
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+  process.exit(ok ? 0 : 1);
+})();

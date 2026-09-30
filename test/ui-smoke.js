@@ -134,8 +134,9 @@ app.whenReady().then(async () => {
     check('and the name fields are left empty',
       await js(win, 'document.querySelectorAll("#modalBody input")[0].value') === ''
       && await js(win, 'document.querySelectorAll("#modalBody input")[1].value') === '');
-    check('with the cursor waiting in Last name',
-      await js(win, 'document.activeElement === document.querySelectorAll("#modalBody input")[1]'));
+    check('with the cursor waiting in Last name', await waitFor(win,
+      'document.activeElement === document.querySelectorAll("#modalBody input")[1]',
+      'last-name focus'));
     await js(win, `Array.from(document.querySelectorAll('#modalActions .btn'))
       .find(b => b.textContent === 'Add Patron').click()`);
     check('adding with no name at all works',
@@ -599,6 +600,33 @@ app.whenReady().then(async () => {
       await js(win, '!Array.from(document.querySelectorAll("#invTable thead th")).some(t => /std|ABV|serving|par|category/i.test(t.textContent))'));
     check('on hand is editable inline',
       await js(win, 'document.querySelectorAll("#invTable tbody tr")[0].querySelectorAll("input").length === 2'));
+
+    console.log('\nImport inventory');
+    check('the Import Inventory button is present',
+      await js(win, '!!document.querySelector("#importBtn") && /Import/.test(document.querySelector("#importBtn").textContent)'));
+    // The file picker is a native dialog and can't be driven here, so exercise
+    // the apply path directly from the page — this is what the preview commits.
+    const importOk = await js(win, `(async () => {
+      const items = [
+        { name: 'IMPORTED TEST LAGER', key: 'IMPORTED TEST LAGER', category: 'beer', abv: 0, serving: '50 CL', servingOz: 50, priceCents: 450 },
+        { name: 'IMPORTED TEST GIN', key: 'IMPORTED TEST GIN', category: 'spirit', abv: 0, serving: '1.5 OZ', servingOz: 1.5, priceCents: 650 },
+      ];
+      const r = await window.api.inventory.importApply({ items, replace: false, pin: '1234' });
+      if (!r.ok) return 'err:' + r.error;
+      return r.data.counts.add;
+    })()`);
+    eq('applying an import adds the beverages', importOk, 2);
+    check('an imported beverage appears on the menu', await js(win, `(async () => {
+      const r = await window.api.product.list({});
+      const p = r.data.find(x => x.name === 'IMPORTED TEST LAGER');
+      return !!p && p.price_cents === 450 && p.category === 'beer' && p.standard_drinks === 1;
+    })()`));
+    check('a wrong PIN is refused', await js(win, `(async () => {
+      const r = await window.api.inventory.importApply({
+        items: [{ name: 'X', key: 'X', category: 'beer', priceCents: 100 }], replace: false, pin: '0000',
+      });
+      return !r.ok && /PIN/i.test(r.error);
+    })()`));
     check('non-alcoholic is not offered when adding an item', await js(win, `(() => {
       document.querySelector('#newProductBtn').click();
       const opts = Array.from(document.querySelectorAll('#modalBody select option')).map(o => o.value);
@@ -632,11 +660,17 @@ app.whenReady().then(async () => {
     check('chart renders bars', await waitFor(win, 'document.querySelectorAll("#salesChart .bar").length >= 1', 'bars'));
     // Polled, not sampled once: the chart redraws on load and again on resize,
     // and getComputedStyle on a node detached mid-redraw returns a default.
+    // Any bar is acceptable as long as it is a lighter step — the normal
+    // #3b7dd8 or the peak highlight #5b9be8 — and never the too-dark brand
+    // blue #00308f (rgb(0,48,143)), which fails contrast on the dark panel.
+    const LIGHT_STEPS = ['rgb(59, 125, 216)', 'rgb(91, 155, 232)'];
     const fillOk = await waitFor(win, `(() => {
       const b = document.querySelector('#salesChart .bar');
-      return !!b && getComputedStyle(b).fill === 'rgb(59, 125, 216)';
+      if (!b) return false;
+      const f = getComputedStyle(b).fill;
+      return ${JSON.stringify(LIGHT_STEPS)}.includes(f);
     })()`, 'bar fill settles');
-    check('bar uses the lighter dark-mode step, not the too-dark brand blue', fillOk,
+    check('bar uses a lighter dark-mode step, not the too-dark brand blue', fillOk,
       await js(win, `(() => {
         const b = document.querySelector('#salesChart .bar');
         return b ? getComputedStyle(b).fill + ' class=' + b.getAttribute('class') : 'no bar';

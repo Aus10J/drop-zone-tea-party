@@ -188,6 +188,24 @@ async function main() {
   fs.writeFileSync(path.join(OUT, 'inventory.png'), img.toPNG());
   console.log('wrote .shots/inventory.png');
 
+  // The import preview, shown with a representative parsed result.
+  await js(`window.showImportPreview(${JSON.stringify({
+    fileName: 'bar-menu.xlsx',
+    items: new Array(37).fill(0).map((_, i) => ({ name: 'X' + i, key: 'X' + i, category: 'beer', priceCents: 200 })),
+    warnings: ['"HOUSE PUNCH" — category not recognised, filed under OTHER.'],
+    counts: { add: 31, update: 6, archive: 0, total: 37 },
+    archiveIfReplace: 14,
+    sampleAdd: ['BEER BUDWEISER', 'BEER CARLSBERG', 'BEER CORONA 35.5 CL', "BEER FOSTER'S", 'BEER HEINEKEN', 'LIQUOR GIN TANQUERAY', 'WINE HOUSE RED', 'COCKTAIL MOJITO'],
+    sampleUpdate: ['Kaiju! Metamorphosis IPA (price 5.00→4.00)', 'Woodford Reserve (price 6.00→7.00)'],
+    sampleArchive: ['Dark Horse Merlot', 'Jose Cuervo Silver', 'Tuborg Green'],
+  })})`);
+  await sleep(500);
+  img = await win.webContents.capturePage();
+  fs.writeFileSync(path.join(OUT, 'import-preview.png'), img.toPNG());
+  console.log('wrote .shots/import-preview.png');
+  await js(`Array.from(document.querySelectorAll('#modalActions .btn')).find(b => b.textContent === 'Cancel').click()`);
+  await sleep(200);
+
   // The patron roster, with its per-row actions.
   await js('document.querySelector(\'.navbtn[data-view="patrons"]\').click()');
   await sleep(700);

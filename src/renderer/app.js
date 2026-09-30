@@ -1571,6 +1571,107 @@ function wireInventory() {
   $('#invSearch').addEventListener('input', renderInventory);
   $('#newProductBtn').addEventListener('click', () => editProduct(null));
   $('#bulkPriceBtn').addEventListener('click', openBulkPrice);
+  $('#importBtn').addEventListener('click', startInventoryImport);
+}
+
+/**
+ * Import a menu from an Excel or CSV file. Two steps: pick the file and preview
+ * exactly what would change, then confirm with the manager PIN. Adding and
+ * updating is the safe default; archiving items missing from the file is an
+ * opt-in so an import can never quietly wipe the live menu.
+ */
+async function startInventoryImport() {
+  const chosen = await tryReq(window.api.inventory.importChoose);
+  if (!chosen || chosen.canceled) return;
+  showImportPreview(chosen);
+}
+
+/** The preview + confirm step, split out so it can be shown with any parsed result. */
+function showImportPreview(chosen) {
+  const { fileName, items, warnings, counts, archiveIfReplace,
+          sampleAdd, sampleUpdate, sampleArchive } = chosen;
+
+  if (!items.length) {
+    openModal({
+      title: 'Nothing to import',
+      body: [
+        el('p', { text: `Couldn’t read any items from ${fileName}.` }),
+        ...warnings.map((w) => el('p', { class: 'hint', text: w })),
+        el('p', { class: 'hint', text:
+          'The file needs a header row with at least an ITEM column and a PRICE column.' }),
+      ],
+      actions: [{ label: 'Close', cls: 'primary' }],
+    });
+    return;
+  }
+
+  const replaceChk = el('input', { type: 'checkbox' });
+  const archiveLine = el('p', { class: 'hint' });
+  const syncArchive = () => {
+    archiveLine.textContent = replaceChk.checked
+      ? `${archiveIfReplace} item(s) currently on the menu are not in this file and will be archived.`
+      : 'Items already on the menu but missing from this file are left untouched.';
+  };
+  replaceChk.addEventListener('change', syncArchive);
+  syncArchive();
+
+  const pinNeeded = state.settings.require_pin_for_admin === '1';
+  const pinInput = el('input', { class: 'input', type: 'password', inputmode: 'numeric', placeholder: 'Manager PIN' });
+
+  const list = (label, names, extra) => (names.length ? el('div', { class: 'import-group' }, [
+    el('div', { class: 'import-group-head', text: `${label} (${extra})` }),
+    el('div', { class: 'import-names', text: names.join(', ') + (names.length >= 8 ? ', …' : '') }),
+  ]) : null);
+
+  openModal({
+    title: `Import from ${fileName}`,
+    body: [
+      el('p', { text: `${counts.total} item(s) read. This will:` }),
+      el('ul', { class: 'import-summary' }, [
+        el('li', { text: `Add ${counts.add} new beverage(s)` }),
+        el('li', { text: `Update ${counts.update} existing (price / category)` }),
+      ]),
+      list('New', sampleAdd, counts.add),
+      list('Updated', sampleUpdate, counts.update),
+      el('label', { class: 'chk', style: 'margin-top:6px' }, [
+        replaceChk, 'Archive anything not in this file (full menu replace)',
+      ]),
+      archiveLine,
+      list('Would archive', sampleArchive, archiveIfReplace),
+      warnings.length ? el('div', { class: 'import-warnings' }, [
+        el('div', { class: 'import-group-head', text: `${warnings.length} note(s)` }),
+        ...warnings.slice(0, 12).map((w) => el('p', { class: 'hint', text: w })),
+      ]) : null,
+      pinNeeded ? el('div', { class: 'form', style: 'margin-top:10px' }, [
+        el('label', { class: 'lbl' }, ['Manager PIN', pinInput]),
+      ]) : null,
+    ],
+    actions: [
+      { label: 'Cancel', cls: 'ghost' },
+      {
+        label: 'Import', cls: 'primary',
+        onClick: async (close) => {
+          if (pinNeeded && !pinInput.value) { toast('Enter the manager PIN.', 'warn'); pinInput.focus(); return; }
+          const res = await tryReq(window.api.inventory.importApply, {
+            items, replace: replaceChk.checked, pin: pinInput.value,
+          });
+          if (!res) return;
+          close();
+          state.products = res.products.filter((p) => p.active);
+          state.lowStock = res.lowStock;
+          renderChrome();
+          renderCategories();
+          renderProducts();
+          renderInventory();
+          await repriceTicket();
+          const c = res.counts;
+          toast(`Imported: ${c.add} added, ${c.update} updated`
+            + (c.archive ? `, ${c.archive} archived` : '') + '.', 'ok', 4000);
+        },
+      },
+    ],
+    onOpen: () => { if (pinNeeded) pinInput.focus(); },
+  });
 }
 
 async function renderInventory() {
