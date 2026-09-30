@@ -184,7 +184,7 @@ function normalizeRows(matrix) {
     const name = cellText(rowArr[colOf.name]).trim().replace(/\s+/g, ' ');
     if (!name) continue;                        // blank line
 
-    const key = name.toUpperCase();
+    const key = matchKey(name);
     if (seen.has(key)) {
       warnings.push(`Duplicate item "${name}" — only the first was used.`);
       continue;
@@ -221,7 +221,25 @@ function normalizeRows(matrix) {
  * Planning and applying
  * ------------------------------------------------------------------ */
 
-const normKey = (s) => String(s || '').trim().replace(/\s+/g, ' ').toUpperCase();
+/**
+ * The key two names must share to be treated as the same beverage. Folds away
+ * formatting differences only — case, spacing, apostrophes (including Excel's
+ * curly ’), trailing periods and accents — so "Foster's", "FOSTERS" and
+ * "Fosters " all match. It deliberately keeps digits and size words intact, so
+ * two real SKUs like "Corona 35.5 CL" and "Corona 50 CL" stay distinct and are
+ * never silently merged.
+ */
+function matchKey(name) {
+  return String(name || '')
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '')   // strip accents
+    .replace(/['’‘`´.]/g, '')                            // drop apostrophes & periods
+    .replace(/[^A-Za-z0-9]+/g, ' ')                      // any other separator → space
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+const normKey = matchKey;
 
 /** Compare the parsed items against the current menu. Read-only. */
 function planImport(items, { replace = false } = {}) {
@@ -269,7 +287,10 @@ function applyImport(items, { replace = false, actor = null } = {}) {
     for (const it of plan.update) {
       const cur = h.prepare('SELECT * FROM products WHERE id = ?').get(it.id);
       db.saveProduct({
-        id: it.id, category: it.category, name: it.name, brand: cur.brand || '',
+        // Keep the beverage's existing display name — a match here means the
+        // names differ only in formatting, so there is nothing to rewrite, and
+        // the preview promised updates touch only price and category.
+        id: it.id, category: it.category, name: cur.name, brand: cur.brand || '',
         abv: it.abv == null ? '' : it.abv,
         serving_oz: it.servingOz == null ? '' : it.servingOz,
         price_cents: it.priceCents, sku: cur.sku || '', active: 1,
@@ -291,5 +312,5 @@ function applyImport(items, { replace = false, actor = null } = {}) {
 
 module.exports = {
   readMatrix, parseCsv, normalizeRows, planImport, applyImport,
-  mapCategory, priceToCents, cellText, cellNumber,
+  mapCategory, priceToCents, cellText, cellNumber, matchKey,
 };

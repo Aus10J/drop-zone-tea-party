@@ -232,10 +232,17 @@ Nothing changes until you confirm. After picking the file you get a **preview**
 — how many items will be added, how many existing ones will be updated (with
 the price/category changes named), and any warnings — then it applies behind
 the manager PIN. Matching is by beverage name, so re-importing an updated
-sheet **updates prices in place instead of creating duplicates**. By default
-items already on the menu but missing from the file are left alone; an opt-in
-**"Archive anything not in this file"** checkbox turns the import into a full
-menu replace, and the preview shows exactly how many that would archive first.
+sheet **updates prices in place instead of creating duplicates**. The match
+ignores formatting differences — case, extra spaces, straight vs curly
+apostrophes, trailing periods, accents — so "Foster's", "FOSTERS" and
+"Fosters " are treated as the same beverage. It is **not** fuzzy, though:
+genuinely different names stay separate, so two sizes of one beer ("Corona
+35.5 CL" and "Corona 50 CL") are never silently merged. An update leaves the
+beverage's existing display name as it is and changes only price and category.
+By default items already on the menu but missing from the file are left alone;
+an opt-in **"Archive anything not in this file"** checkbox turns the import
+into a full menu replace, and the preview shows exactly how many that would
+archive first.
 
 ---
 
@@ -569,7 +576,7 @@ the warning entirely means buying a code-signing certificate.
 ```bash
 npm install          # rebuilds the native SQLite module for Electron
 npm start            # run the app
-npm test             # 505 main-process checks: limits, caps, import, recording safeguard, reports
+npm test             # 518 main-process checks: limits, caps, import, recording safeguard, reports
 npm run test:ui      # 170 checks driving the real window, incl. a real PDF render
 npm run dist:win     # build the Windows x64 installer + portable exe
                      # (--publish never: releases are published by CI, not by

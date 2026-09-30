@@ -173,6 +173,38 @@ async function main() {
     String(replacePlan.counts.archive));
 
   /* ---------------------------------------------------------------- */
+  section('Import name matching (formatting-tolerant, not fuzzy)');
+  // Formatting-only differences fold to the same key…
+  eq('case is ignored', importer.matchKey('Budweiser'), importer.matchKey('BUDWEISER'));
+  eq('extra spaces are ignored', importer.matchKey('Dark  Horse   Merlot'), importer.matchKey('Dark Horse Merlot'));
+  eq('a curly apostrophe matches a straight one',
+    importer.matchKey('Foster’s'), importer.matchKey("Foster's"));
+  eq('apostrophes are folded away entirely', importer.matchKey("Foster's"), importer.matchKey('Fosters'));
+  eq('trailing periods are ignored', importer.matchKey('Dr. Pepper'), importer.matchKey('Dr Pepper'));
+  eq('accents are ignored', importer.matchKey('Café Patrón'), importer.matchKey('Cafe Patron'));
+  // …but genuinely different products never collapse together.
+  check('two sizes of the same beer stay distinct',
+    importer.matchKey('Corona 35.5 CL') !== importer.matchKey('Corona 50 CL'));
+  check('different products stay distinct',
+    importer.matchKey('Bud Light') !== importer.matchKey('Budweiser'));
+
+  // An import whose name differs only in formatting updates the existing row.
+  const existingBeer = db.listProducts().find((p) => p.name === 'Tuborg Green');
+  const priceWas = existingBeer.price_cents;
+  const variantCsv = 'ITEM,Category,PRICE\nTUBORG  GREEN,BEER,$4.25\n';
+  const vItems = importer.normalizeRows(importer.parseCsv(variantCsv)).items;
+  const vPlan = importer.planImport(vItems, { replace: false });
+  eq('a formatting-variant name matches the existing beverage', vPlan.counts.update, 1);
+  eq('and is not treated as new', vPlan.counts.add, 0);
+  importer.applyImport(vItems, { replace: false, actor: 'test' });
+  eq('the existing row was updated, not duplicated',
+    db.listProducts({ includeInactive: true }).filter((p) => importer.matchKey(p.name) === importer.matchKey('Tuborg Green')).length, 1);
+  eq('its price changed', db.listProducts().find((p) => p.name === 'Tuborg Green').price_cents, 425);
+  check('and the display name was left as it was', priceWas !== 425
+    && !!db.listProducts().find((p) => p.name === 'Tuborg Green'));
+  db.setProductPrice(existingBeer.id, priceWas);
+
+  /* ---------------------------------------------------------------- */
   section('Importing a menu (real .xlsx)');
   {
     const ExcelJS = require('exceljs');
